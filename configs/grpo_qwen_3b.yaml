@@ -1,0 +1,107 @@
+# R1-RAG Training Configuration
+# Model: Qwen2.5-3B-Instruct
+# Algorithm: GRPO with DAG-based process supervision
+
+# Data Configuration
+data:
+  train_files: ["data/train.parquet"]
+  val_files: data/val.parquet
+  train_data_num: null  # Use all data
+  val_data_num: null
+  train_batch_size: 256
+  val_batch_size: 512
+  max_prompt_length: 4096
+  max_response_length: 512
+  max_start_length: 2048
+  max_obs_length: 600
+  shuffle_train_dataloader: true
+
+# Algorithm Configuration  
+algorithm:
+  adv_estimator: grpo  # Group Relative Policy Optimization
+  no_think_rl: false   # Include thinking in RL
+
+# Model Configuration
+actor_rollout_ref:
+  model:
+    path: "Qwen/Qwen2.5-3B-Instruct"  # Base model
+    enable_gradient_checkpointing: true
+    use_remove_padding: true
+  
+  # Actor (policy) settings
+  actor:
+    strategy: fsdp
+    optim:
+      lr: 1.0e-6
+      lr_warmup_steps_ratio: 0.285
+    use_kl_loss: true
+    kl_loss_coef: 0.001
+    kl_loss_type: low_var_kl
+    ppo_mini_batch_size: 128
+    ppo_micro_batch_size: 32
+    state_masking: true
+    fsdp_config:
+      param_offload: true
+      grad_offload: true
+      optimizer_offload: true
+  
+  # Rollout (generation) settings
+  rollout:
+    name: vllm
+    tensor_model_parallel_size: 1
+    gpu_memory_utilization: 0.6
+    log_prob_micro_batch_size: 64
+    n_agent: 5  # Number of samples per prompt for GRPO
+    temperature: 1.0
+  
+  # Reference policy settings
+  ref:
+    log_prob_micro_batch_size: 64
+    fsdp_config:
+      param_offload: true
+
+# Critic Configuration (for baseline)
+critic:
+  strategy: fsdp
+
+# Reward Model (not used, we use rule-based)
+reward_model:
+  enable: false
+
+# Trainer Configuration
+trainer:
+  logger: ['console', 'wandb']
+  project_name: "R1-RAG"
+  experiment_name: "qwen2.5-3b-instruct-grpo"
+  n_gpus_per_node: 4
+  nnodes: 1
+  total_epochs: 15
+  total_training_steps: 1000
+  save_freq: 50
+  test_freq: 25
+  val_only: false
+  val_before_train: true
+  default_local_dir: "checkpoints/r1_rag"
+  default_hdfs_dir: null
+
+# R1-RAG Specific Settings
+max_turns: 4  # Maximum search iterations
+
+# Reward Configuration
+reward:
+  embedding_model_path: "intfloat/e5-base-v2"
+  format_weight: 0.1
+  plan_sim_weight: 0.5
+  structure_weight: 0.5
+  step_weight: 0.5
+  node_match_threshold: 0.7
+  ged_beta: 1.0
+  annealing_total_steps: 50
+  annealing_center: 0.9
+  annealing_temperature: 10.0
+
+# Retriever Configuration
+retriever:
+  url: "http://127.0.0.1:8000/retrieve"
+  topk: 3
+
