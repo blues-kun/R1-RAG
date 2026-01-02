@@ -1,11 +1,11 @@
 """
-Planning Data Processor for R1-RAG
+R1-RAG 规划数据处理器
 
-Handles data pipeline:
-1. Load raw multi-hop QA datasets
-2. Generate or load golden plan annotations
-3. Build training data with proper format
-4. Export to parquet for veRL training
+处理数据流水线:
+1. 加载原始多跳问答数据集
+2. 生成或加载黄金规划标注
+3. 构建正确格式的训练数据
+4. 导出为parquet格式用于veRL训练
 """
 
 import os
@@ -21,7 +21,7 @@ from .gpt4o_annotator import GPT4oPlanGenerator, AnnotationResult
 
 @dataclass
 class TrainingSample:
-    """A single training sample for R1-RAG."""
+    """R1-RAG的单个训练样本"""
     id: int
     question: str
     golden_answers: List[str]
@@ -44,7 +44,7 @@ class TrainingSample:
             self.extra_info = {"index": self.id, "split": "train"}
     
     def to_dict(self) -> Dict:
-        """Convert to dictionary for DataFrame."""
+        """转换为字典用于DataFrame"""
         return {
             "id": self.id,
             "question": self.question,
@@ -59,16 +59,16 @@ class TrainingSample:
 
 
 class PlanningDataProcessor:
-    """Processes multi-hop QA data for R1-RAG training.
+    """处理多跳问答数据用于R1-RAG训练
     
-    Supports two modes:
-    1. Generate new annotations using GPT-4o
-    2. Load pre-existing annotations from file
+    支持两种模式:
+    1. 使用GPT-4o生成新标注
+    2. 从文件加载已有标注
     
-    The processor ensures:
-    - Consistent prompt formatting
-    - Proper metadata structure for reward computation
-    - Quality filtering based on answer validation
+    处理器确保:
+    - 一致的prompt格式
+    - 正确的元数据结构用于奖励计算
+    - 基于答案验证的质量过滤
     """
     
     def __init__(
@@ -76,24 +76,24 @@ class PlanningDataProcessor:
         data_source: str = "multi_hop_qa",
         use_one_shot: bool = True
     ):
-        """Initialize the data processor.
+        """初始化数据处理器
         
         Args:
-            data_source: Name identifier for the data source
-            use_one_shot: Whether to include one-shot example in prompts
+            data_source: 数据源的名称标识
+            use_one_shot: 是否在prompts中包含one-shot示例
         """
         self.data_source = data_source
         self.use_one_shot = use_one_shot
         self.samples: List[TrainingSample] = []
         
     def _format_prompt(self, question: str) -> List[Dict[str, str]]:
-        """Format question into chat prompt format.
+        """将问题格式化为聊天prompt格式
         
         Args:
-            question: The raw question text
+            question: 原始问题文本
             
         Returns:
-            List with single user message containing formatted prompt
+            包含格式化prompt的单个用户消息的列表
         """
         one_shot = ONE_SHOT_EXAMPLE if self.use_one_shot else ""
         
@@ -113,21 +113,21 @@ class PlanningDataProcessor:
         graph_key: str = "graph",
         hop_key: str = "hop"
     ) -> int:
-        """Load data from JSONL file with pre-existing annotations.
+        """从带有已有标注的JSONL文件加载数据
         
         Args:
-            file_path: Path to JSONL file
-            question_key: Key for question field
-            answer_key: Key for golden answers
-            plan_key: Key for plan annotation (optional)
-            graph_key: Key for graph annotation (optional)
-            hop_key: Key for hop count (optional)
+            file_path: JSONL文件路径
+            question_key: 问题字段的键
+            answer_key: 黄金答案的键
+            plan_key: 规划标注的键（可选）
+            graph_key: 图标注的键（可选）
+            hop_key: 跳数的键（可选）
             
         Returns:
-            Number of samples loaded
+            加载的样本数量
         """
         with open(file_path, 'r', encoding='utf-8') as f:
-            for idx, line in enumerate(tqdm(f, desc="Loading data")):
+            for idx, line in enumerate(tqdm(f, desc="加载数据")):
                 try:
                     data = json.loads(line.strip())
                     
@@ -136,7 +136,7 @@ class PlanningDataProcessor:
                     if isinstance(answers, str):
                         answers = [answers]
                     
-                    # Build metadata
+                    # 构建元数据
                     metadata = {}
                     if plan_key in data:
                         metadata["plan"] = data[plan_key]
@@ -159,10 +159,10 @@ class PlanningDataProcessor:
                     self.samples.append(sample)
                     
                 except Exception as e:
-                    print(f"[Warning] Failed to parse line {idx}: {e}")
+                    print(f"[警告] 解析第{idx}行失败: {e}")
                     continue
         
-        print(f"[DataProcessor] Loaded {len(self.samples)} samples from {file_path}")
+        print(f"[数据处理器] 从 {file_path} 加载了 {len(self.samples)} 个样本")
         return len(self.samples)
     
     def load_from_huggingface(
@@ -172,28 +172,28 @@ class PlanningDataProcessor:
         question_key: str = "question",
         answer_key: str = "golden_answers"
     ) -> int:
-        """Load data from HuggingFace datasets.
+        """从HuggingFace数据集加载数据
         
         Args:
-            dataset_name: HuggingFace dataset identifier
-            split: Dataset split to load
-            question_key: Key for question field
-            answer_key: Key for answers field
+            dataset_name: HuggingFace数据集标识符
+            split: 要加载的数据集分片
+            question_key: 问题字段的键
+            answer_key: 答案字段的键
             
         Returns:
-            Number of samples loaded
+            加载的样本数量
         """
         from datasets import load_dataset
         
         dataset = load_dataset(dataset_name, split=split)
         
-        for idx, item in enumerate(tqdm(dataset, desc="Loading HF data")):
+        for idx, item in enumerate(tqdm(dataset, desc="加载HF数据")):
             question = item.get(question_key, "")
             answers = item.get(answer_key, [])
             if isinstance(answers, str):
                 answers = [answers]
             
-            # Extract any available metadata
+            # 提取任何可用的元数据
             metadata = {}
             for key in ["plan", "graph", "hop", "metadata"]:
                 if key in item:
@@ -209,7 +209,7 @@ class PlanningDataProcessor:
             )
             self.samples.append(sample)
         
-        print(f"[DataProcessor] Loaded {len(self.samples)} samples from {dataset_name}")
+        print(f"[数据处理器] 从 {dataset_name} 加载了 {len(self.samples)} 个样本")
         return len(self.samples)
     
     def generate_annotations(
@@ -218,22 +218,22 @@ class PlanningDataProcessor:
         model: str = "gpt-4o",
         max_samples: Optional[int] = None
     ) -> int:
-        """Generate plan annotations using GPT-4o.
+        """使用GPT-4o生成规划标注
         
-        Updates samples in-place with generated annotations.
-        Filters out samples where annotation generation failed.
+        就地更新样本的标注。
+        过滤掉标注生成失败的样本。
         
         Args:
-            api_key: OpenAI API key
-            model: GPT model to use
-            max_samples: Maximum samples to annotate (for testing)
+            api_key: OpenAI API密钥
+            model: 使用的GPT模型
+            max_samples: 标注的最大样本数（用于测试）
             
         Returns:
-            Number of successfully annotated samples
+            成功标注的样本数量
         """
         annotator = GPT4oPlanGenerator(api_key=api_key, model=model)
         
-        # Prepare samples for annotation
+        # 准备要标注的样本
         to_annotate = self.samples[:max_samples] if max_samples else self.samples
         
         raw_samples = [
@@ -241,10 +241,10 @@ class PlanningDataProcessor:
             for s in to_annotate
         ]
         
-        # Generate annotations
+        # 生成标注
         results = annotator.generate_batch(raw_samples)
         
-        # Update samples with annotations
+        # 用标注更新样本
         valid_samples = []
         for sample, result in zip(to_annotate, results):
             if result.is_valid:
@@ -252,27 +252,27 @@ class PlanningDataProcessor:
                 sample.metadata["graph"] = result.graph
                 valid_samples.append(sample)
         
-        # Replace samples with valid ones
+        # 替换为有效样本
         if max_samples:
-            # Keep un-annotated samples
+            # 保留未标注的样本
             self.samples = valid_samples + self.samples[max_samples:]
         else:
             self.samples = valid_samples
         
-        print(f"[DataProcessor] Generated {len(valid_samples)} valid annotations")
+        print(f"[数据处理器] 生成了 {len(valid_samples)} 个有效标注")
         return len(valid_samples)
     
     def filter_with_annotations(self) -> int:
-        """Filter to keep only samples with plan annotations.
+        """过滤，只保留有规划标注的样本
         
         Returns:
-            Number of samples remaining
+            剩余样本数量
         """
         self.samples = [
             s for s in self.samples
             if s.metadata.get("plan") and s.metadata.get("graph")
         ]
-        print(f"[DataProcessor] Filtered to {len(self.samples)} samples with annotations")
+        print(f"[数据处理器] 过滤后剩余 {len(self.samples)} 个有标注的样本")
         return len(self.samples)
     
     def export_parquet(
@@ -280,45 +280,45 @@ class PlanningDataProcessor:
         output_path: str,
         train_ratio: float = 0.9
     ) -> Dict[str, str]:
-        """Export processed data to parquet files.
+        """导出处理后的数据为parquet文件
         
         Args:
-            output_path: Directory to save parquet files
-            train_ratio: Ratio of data for training (rest for validation)
+            output_path: 保存parquet文件的目录
+            train_ratio: 训练数据的比例（剩余用于验证）
             
         Returns:
-            Dict with paths to train and val files
+            包含train和val文件路径的字典
         """
         os.makedirs(output_path, exist_ok=True)
         
-        # Convert to DataFrame
+        # 转换为DataFrame
         data = [s.to_dict() for s in self.samples]
         df = pd.DataFrame(data)
         
-        # Split train/val
+        # 分割train/val
         split_idx = int(len(df) * train_ratio)
         train_df = df.iloc[:split_idx]
         val_df = df.iloc[split_idx:]
         
-        # Save
+        # 保存
         train_path = os.path.join(output_path, "train.parquet")
         val_path = os.path.join(output_path, "val.parquet")
         
         train_df.to_parquet(train_path, index=False)
         val_df.to_parquet(val_path, index=False)
         
-        print(f"[DataProcessor] Exported {len(train_df)} train, {len(val_df)} val samples")
+        print(f"[数据处理器] 导出了 {len(train_df)} 个训练样本, {len(val_df)} 个验证样本")
         
         return {"train": train_path, "val": val_path}
     
     def export_jsonl(self, output_path: str) -> str:
-        """Export processed data to JSONL format.
+        """导出处理后的数据为JSONL格式
         
         Args:
-            output_path: Path to output file
+            output_path: 输出文件路径
             
         Returns:
-            Path to output file
+            输出文件路径
         """
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
@@ -326,14 +326,14 @@ class PlanningDataProcessor:
             for sample in self.samples:
                 f.write(json.dumps(sample.to_dict(), ensure_ascii=False) + '\n')
         
-        print(f"[DataProcessor] Exported {len(self.samples)} samples to {output_path}")
+        print(f"[数据处理器] 导出了 {len(self.samples)} 个样本到 {output_path}")
         return output_path
     
     def get_statistics(self) -> Dict[str, Any]:
-        """Get statistics about the loaded data.
+        """获取加载数据的统计信息
         
         Returns:
-            Dictionary with various statistics
+            包含各种统计信息的字典
         """
         stats = {
             "total_samples": len(self.samples),
@@ -342,7 +342,7 @@ class PlanningDataProcessor:
             "data_sources": list(set(s.data_source for s in self.samples))
         }
         
-        # Hop distribution
+        # 跳数分布
         hop_counts = {}
         for s in self.samples:
             hop = s.metadata.get("hop", "unknown")
@@ -350,4 +350,3 @@ class PlanningDataProcessor:
         stats["hop_distribution"] = hop_counts
         
         return stats
-

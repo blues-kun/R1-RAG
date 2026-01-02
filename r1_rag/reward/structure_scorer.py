@@ -1,11 +1,9 @@
 """
-Structure Scorer for R1-RAG
+R1-RAG 结构评分器
 
-Uses Graph Edit Distance (GED) to measure structural similarity
-between predicted and golden planning DAGs.
+使用图编辑距离（GED）测量预测和黄金规划DAG之间的结构相似度。
 
-This provides the "structure reward" signal that encourages
-proper dependency modeling in multi-hop reasoning.
+为多跳推理中正确的依赖建模提供"结构奖励"信号。
 """
 
 import re
@@ -17,47 +15,47 @@ from networkx.algorithms.isomorphism import DiGraphMatcher
 
 
 class StructureScorer:
-    """Computes structural similarity between planning DAGs.
+    """计算规划DAG之间的结构相似度
     
-    The key insight is that multi-hop reasoning requires proper
-    dependency structure: Q2 should depend on Q1's answer, etc.
+    核心洞察: 多跳推理需要正确的依赖结构：
+    Q2应该依赖于Q1的答案，等等。
     
-    GED captures:
-    - Missing/extra nodes (wrong number of sub-questions)
-    - Missing/extra edges (wrong dependencies)
-    - Incorrect dependency ordering
+    GED捕捉:
+    - 缺失/多余的节点（错误的子问题数量）
+    - 缺失/多余的边（错误的依赖关系）
+    - 不正确的依赖顺序
     """
     
     def __init__(self, placeholder_pattern: str = r"<A(\d+)>"):
-        """Initialize structure scorer.
+        """初始化结构评分器
         
         Args:
-            placeholder_pattern: Regex pattern for answer placeholders
+            placeholder_pattern: 答案占位符的正则表达式模式
         """
         self.placeholder_pattern = re.compile(placeholder_pattern)
         
     def plan_to_dag(self, plan: Dict[str, List[str]]) -> nx.DiGraph:
-        """Convert planning dict to directed acyclic graph.
+        """将规划字典转换为有向无环图
         
-        Plan format: {"Q1": ["question text", "<A1>"], "Q2": ["text with <A1>", "<A2>"]}
+        规划格式: {"Q1": ["问题文本", "<A1>"], "Q2": ["包含<A1>的文本", "<A2>"]}
         
-        Creates a DAG where:
-        - Each node is a sub-question (Q1, Q2, ...)
-        - Edges represent dependencies (Q1 → Q2 if Q2 uses <A1>)
+        创建的DAG中:
+        - 每个节点是一个子问题（Q1, Q2, ...）
+        - 边表示依赖关系（如果Q2使用<A1>，则Q1 → Q2）
         
         Args:
-            plan: Planning dictionary
+            plan: 规划字典
             
         Returns:
-            NetworkX DiGraph representing the plan structure
+            表示规划结构的NetworkX有向图
         """
         dag = nx.DiGraph()
         
         for node_id, (question, _) in plan.items():
-            # Add node with question as attribute
+            # 添加节点，问题作为属性
             dag.add_node(node_id, template=question)
             
-            # Find dependencies from placeholders in question
+            # 从问题中的占位符找到依赖关系
             placeholders = self.placeholder_pattern.findall(question)
             for placeholder_idx in placeholders:
                 parent_node = f"Q{placeholder_idx}"
@@ -73,35 +71,34 @@ class StructureScorer:
         mapping: Dict[str, str],
         beta: float = 1.0
     ) -> Tuple[int, float]:
-        """Compute Graph Edit Distance between DAGs.
+        """计算DAG之间的图编辑距离
         
-        GED = |node_diff| + |edge_diff|
+        GED = |节点差异| + |边差异|
         
-        Uses the provided node mapping to align the graphs before
-        computing differences.
+        使用提供的节点映射在计算差异前对齐图。
         
         Args:
-            pred_dag: Predicted planning DAG
-            gold_dag: Golden planning DAG
-            mapping: Node mapping from golden to predicted nodes
-            beta: Normalization factor for exponential decay
+            pred_dag: 预测的规划DAG
+            gold_dag: 黄金规划DAG
+            mapping: 从黄金到预测节点的映射
+            beta: 指数衰减的归一化因子
             
         Returns:
-            Tuple of (raw GED, normalized GED score in [0,1])
+            (原始GED, 归一化的GED分数[0,1]) 元组
         """
-        # Relabel nodes based on mapping
+        # 基于映射重新标记节点
         gold_relabel = {}
         pred_relabel = {}
         common_idx = 1
         
-        # Matched nodes get common labels
+        # 匹配的节点获得共同标签
         for gold_node, pred_node in mapping.items():
             common_label = f"C{common_idx}"
             gold_relabel[gold_node] = common_label
             pred_relabel[pred_node] = common_label
             common_idx += 1
         
-        # Unmatched nodes get unique labels
+        # 未匹配的节点获得唯一标签
         for idx, node in enumerate(gold_dag.nodes()):
             if node not in gold_relabel:
                 gold_relabel[node] = f"Gg{idx}"
@@ -110,21 +107,21 @@ class StructureScorer:
             if node not in pred_relabel:
                 pred_relabel[node] = f"Gp{idx}"
         
-        # Apply relabeling
+        # 应用重新标记
         gold_relabeled = nx.relabel_nodes(gold_dag, gold_relabel)
         pred_relabeled = nx.relabel_nodes(pred_dag, pred_relabel)
         
-        # Compute symmetric differences
+        # 计算对称差异
         node_union = set(gold_relabeled.nodes()) | set(pred_relabeled.nodes())
         node_intersection = set(gold_relabeled.nodes()) & set(pred_relabeled.nodes())
         
         edge_union = set(gold_relabeled.edges()) | set(pred_relabeled.edges())
         edge_intersection = set(gold_relabeled.edges()) & set(pred_relabeled.edges())
         
-        # GED = node diff + edge diff
+        # GED = 节点差异 + 边差异
         ged = len(node_union - node_intersection) + len(edge_union - edge_intersection)
         
-        # Normalize using exponential decay
+        # 使用指数衰减归一化
         normalized_ged = np.exp(-beta * ged)
         
         return ged, round(normalized_ged, 6)
@@ -137,22 +134,22 @@ class StructureScorer:
         alpha: float = 0.9,
         beta: float = 1.0
     ) -> Tuple[int, float, float]:
-        """Compute overall structural similarity score.
+        """计算整体结构相似度分数
         
-        Combines:
-        - Raw GED (for interpretability)
-        - Normalized GED score (for reward)
-        - Binary structure match (GED == 0)
+        组合:
+        - 原始GED（用于可解释性）
+        - 归一化GED分数（用于奖励）
+        - 二值结构匹配（GED == 0）
         
         Args:
-            pred_plan: Predicted plan
-            gold_plan: Golden plan
-            mapping: Node mapping from semantic scorer
-            alpha: Weight for semantic vs structural components
-            beta: GED normalization factor
+            pred_plan: 预测规划
+            gold_plan: 黄金规划
+            mapping: 来自语义评分器的节点映射
+            alpha: 语义与结构分量的权重
+            beta: GED归一化因子
             
         Returns:
-            Tuple of (raw GED, normalized score, binary match indicator)
+            (原始GED, 归一化分数, 二值匹配指示器) 元组
         """
         if not pred_plan or not gold_plan:
             return 0, 0.0, 0.0
@@ -162,7 +159,7 @@ class StructureScorer:
         
         ged, normalized_ged = self.compute_ged(pred_dag, gold_dag, mapping, beta)
         
-        # Binary indicator: 1 if structure matches exactly (or close)
+        # 二值指示器: 结构完全匹配（或接近）时为1
         structure_match = 1.0 if ged < 1 else 0.0
         
         return ged, normalized_ged, structure_match
@@ -172,17 +169,17 @@ class StructureScorer:
         pred_dag: nx.DiGraph,
         gold_dag: nx.DiGraph
     ) -> List[str]:
-        """Find isomorphic subgraph between predicted and golden DAG.
+        """在预测和黄金DAG之间找到同构子图
         
-        Useful for partial credit when predicted plan captures a
-        subset of the golden reasoning structure.
+        当预测规划捕捉到黄金推理结构的子集时，
+        用于给予部分分数。
         
         Args:
-            pred_dag: Predicted DAG
-            gold_dag: Golden DAG (pattern to match)
+            pred_dag: 预测DAG
+            gold_dag: 黄金DAG（要匹配的模式）
             
         Returns:
-            List of nodes in pred_dag that form isomorphic subgraph
+            pred_dag中形成同构子图的节点列表
         """
         matcher = DiGraphMatcher(pred_dag, gold_dag)
         matched_nodes = []
@@ -191,4 +188,3 @@ class StructureScorer:
             matched_nodes.extend(mapping.keys())
         
         return list(set(matched_nodes))
-

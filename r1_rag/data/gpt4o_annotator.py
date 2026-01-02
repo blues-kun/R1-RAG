@@ -1,12 +1,12 @@
 """
-GPT-4o Plan Annotation Generator for R1-RAG
+R1-RAG GPT-4o规划标注生成器
 
-Uses GPT-4o to generate high-quality planning DAG annotations:
-1. Decompose multi-hop questions into sub-questions
-2. Generate intermediate answers for each sub-question
-3. Validate against ground truth for quality filtering
+使用GPT-4o生成高质量的规划DAG标注:
+1. 将多跳问题分解为子问题
+2. 为每个子问题生成中间答案
+3. 对照ground truth进行质量过滤验证
 
-This creates the "golden plans" used for process supervision in RL training.
+创建用于RL训练过程监督的"黄金规划"。
 """
 
 import json
@@ -22,7 +22,7 @@ from .prompts import GPT4O_PLAN_ANNOTATION_PROMPT
 
 @dataclass
 class AnnotationResult:
-    """Result of GPT-4o plan annotation."""
+    """GPT-4o规划标注的结果"""
     question: str
     gold_answer: List[str]
     plan: Optional[Dict[str, List[str]]]
@@ -32,18 +32,18 @@ class AnnotationResult:
 
 
 class GPT4oPlanGenerator:
-    """Generates planning DAG annotations using GPT-4o.
+    """使用GPT-4o生成规划DAG标注
     
-    Key design decisions:
-    1. Use ground truth to guide and validate annotations
-    2. Implement retry logic for robustness
-    3. Filter low-quality annotations
-    4. Support batch processing with parallelism
+    关键设计决策:
+    1. 使用ground truth来引导和验证标注
+    2. 实现重试逻辑以提高鲁棒性
+    3. 过滤低质量标注
+    4. 支持并行批处理
     
-    The generated plans are used as "golden labels" for:
-    - Semantic similarity scoring (E5 embedding)
-    - Structural similarity scoring (GED)
-    - Sub-goal completion scoring (F1)
+    生成的规划用作"黄金标签"用于:
+    - 语义相似度评分（E5嵌入）
+    - 结构相似度评分（GED）
+    - 子目标完成度评分（F1）
     """
     
     def __init__(
@@ -55,21 +55,21 @@ class GPT4oPlanGenerator:
         temperature: float = 0.3,
         max_workers: int = 5
     ):
-        """Initialize the GPT-4o annotator.
+        """初始化GPT-4o标注器
         
         Args:
-            api_key: OpenAI API key
-            model: Model name (gpt-4o recommended)
-            max_retries: Maximum retry attempts for API calls
-            retry_delay: Delay between retries in seconds
-            temperature: Sampling temperature (lower = more deterministic)
-            max_workers: Number of parallel workers for batch processing
+            api_key: OpenAI API密钥
+            model: 模型名称（推荐gpt-4o）
+            max_retries: API调用的最大重试次数
+            retry_delay: 重试之间的延迟（秒）
+            temperature: 采样温度（越低越确定）
+            max_workers: 批处理的并行worker数
         """
         try:
             from openai import OpenAI
             self.client = OpenAI(api_key=api_key)
         except ImportError:
-            raise ImportError("Please install openai: pip install openai")
+            raise ImportError("请安装openai: pip install openai")
         
         self.model = model
         self.max_retries = max_retries
@@ -77,24 +77,24 @@ class GPT4oPlanGenerator:
         self.temperature = temperature
         self.max_workers = max_workers
         
-        # Pattern for extracting JSON from response
+        # 从响应中提取JSON的模式
         self.json_pattern = re.compile(r'\{[\s\S]*\}')
     
     def _call_gpt4o(self, prompt: str) -> Optional[str]:
-        """Make API call to GPT-4o with retry logic.
+        """带重试逻辑的GPT-4o API调用
         
         Args:
-            prompt: The prompt to send
+            prompt: 要发送的提示
             
         Returns:
-            Response text or None if all retries fail
+            响应文本，如果所有重试都失败则返回None
         """
         for attempt in range(self.max_retries):
             try:
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=[
-                        {"role": "system", "content": "You are a helpful assistant that generates structured reasoning plans for multi-hop questions."},
+                        {"role": "system", "content": "你是一个为多跳问题生成结构化推理规划的助手。"},
                         {"role": "user", "content": prompt}
                     ],
                     temperature=self.temperature,
@@ -105,21 +105,21 @@ class GPT4oPlanGenerator:
                 if attempt < self.max_retries - 1:
                     time.sleep(self.retry_delay * (attempt + 1))
                 else:
-                    print(f"[GPT4o] Failed after {self.max_retries} attempts: {e}")
+                    print(f"[GPT4o] {self.max_retries}次尝试后失败: {e}")
                     return None
         return None
     
     def _parse_response(self, response: str) -> Tuple[Optional[Dict], Optional[Dict]]:
-        """Parse GPT-4o response to extract plan and graph.
+        """解析GPT-4o响应以提取plan和graph
         
         Args:
-            response: Raw GPT-4o response
+            response: 原始GPT-4o响应
             
         Returns:
-            Tuple of (plan dict, graph dict) or (None, None) on failure
+            (plan字典, graph字典) 元组，失败时返回(None, None)
         """
         try:
-            # Find JSON in response
+            # 在响应中查找JSON
             match = self.json_pattern.search(response)
             if not match:
                 return None, None
@@ -128,15 +128,15 @@ class GPT4oPlanGenerator:
             plan = data.get("plan", {})
             graph = data.get("graph", {})
             
-            # Validate structure
+            # 验证结构
             if not plan or not graph:
                 return None, None
             
-            # Normalize placeholders
+            # 规范化占位符
             normalized_plan = {}
             for key, value in plan.items():
                 if isinstance(value, list) and len(value) >= 2:
-                    # Convert #N to <AN>
+                    # 将 #N 转换为 <AN>
                     question = re.sub(r"#(\d+)", r"<A\1>", str(value[0]))
                     placeholder = re.sub(r"#(\d+)", r"<A\1>", str(value[1]))
                     normalized_plan[key] = [question, placeholder]
@@ -152,32 +152,32 @@ class GPT4oPlanGenerator:
         graph: Dict[str, Dict],
         gold_answer: List[str]
     ) -> bool:
-        """Validate that the annotation leads to correct answer.
+        """验证标注是否导向正确答案
         
-        Checks:
-        1. Plan has at least one sub-question
-        2. Graph has answers for all plan questions
-        3. Final answer in graph matches gold answer
+        检查:
+        1. 规划至少有一个子问题
+        2. 图中包含所有规划问题的答案
+        3. 图中的最终答案与黄金答案匹配
         
         Args:
-            plan: Generated plan
-            graph: Generated execution graph
-            gold_answer: Ground truth answers
+            plan: 生成的规划
+            graph: 生成的执行图
+            gold_answer: Ground truth答案
             
         Returns:
-            True if annotation is valid
+            如果标注有效则返回True
         """
         if not plan or not graph:
             return False
         
-        # Check all plan questions have answers
+        # 检查所有规划问题都有答案
         for q_key in plan.keys():
             if q_key not in graph:
                 return False
             if "answer" not in graph[q_key]:
                 return False
         
-        # Check final answer matches gold (relaxed matching)
+        # 检查最终答案是否匹配黄金答案（宽松匹配）
         final_q = f"Q{len(plan)}"
         if final_q in graph:
             final_answer = graph[final_q].get("answer", "").lower().strip()
@@ -192,22 +192,22 @@ class GPT4oPlanGenerator:
         question: str,
         gold_answer: List[str]
     ) -> AnnotationResult:
-        """Generate plan annotation for a single question.
+        """为单个问题生成规划标注
         
         Args:
-            question: The multi-hop question
-            gold_answer: List of acceptable gold answers
+            question: 多跳问题
+            gold_answer: 可接受的黄金答案列表
             
         Returns:
-            AnnotationResult with plan and graph (or error info)
+            包含plan和graph的AnnotationResult（或错误信息）
         """
-        # Format prompt
+        # 格式化prompt
         prompt = GPT4O_PLAN_ANNOTATION_PROMPT.format(
             question=question,
             gold_answer=gold_answer[0] if gold_answer else "N/A"
         )
         
-        # Call GPT-4o
+        # 调用GPT-4o
         response = self._call_gpt4o(prompt)
         if not response:
             return AnnotationResult(
@@ -216,10 +216,10 @@ class GPT4oPlanGenerator:
                 plan=None,
                 graph=None,
                 is_valid=False,
-                error_message="GPT-4o API call failed"
+                error_message="GPT-4o API调用失败"
             )
         
-        # Parse response
+        # 解析响应
         plan, graph = self._parse_response(response)
         if not plan or not graph:
             return AnnotationResult(
@@ -228,19 +228,19 @@ class GPT4oPlanGenerator:
                 plan=None,
                 graph=None,
                 is_valid=False,
-                error_message="Failed to parse GPT-4o response"
+                error_message="解析GPT-4o响应失败"
             )
         
-        # Validate annotation
+        # 验证标注
         is_valid = self._validate_annotation(plan, graph, gold_answer)
         
         return AnnotationResult(
             question=question,
             gold_answer=gold_answer,
             plan=plan,
-            graph=[graph],  # Wrap in list for compatibility
+            graph=[graph],  # 包装为列表以兼容
             is_valid=is_valid,
-            error_message=None if is_valid else "Annotation validation failed"
+            error_message=None if is_valid else "标注验证失败"
         )
     
     def generate_batch(
@@ -249,17 +249,17 @@ class GPT4oPlanGenerator:
         question_key: str = "question",
         answer_key: str = "golden_answers"
     ) -> List[AnnotationResult]:
-        """Generate annotations for a batch of samples.
+        """为一批样本生成标注
         
-        Uses parallel processing for efficiency.
+        使用并行处理以提高效率。
         
         Args:
-            samples: List of sample dicts with question and answers
-            question_key: Key for question field
-            answer_key: Key for gold answers field
+            samples: 包含问题和答案的样本字典列表
+            question_key: 问题字段的键
+            answer_key: 黄金答案字段的键
             
         Returns:
-            List of AnnotationResults
+            AnnotationResult列表
         """
         results = []
         
@@ -280,7 +280,7 @@ class GPT4oPlanGenerator:
                 )
                 futures[future] = i
             
-            for future in tqdm(as_completed(futures), total=len(futures), desc="Generating annotations"):
+            for future in tqdm(as_completed(futures), total=len(futures), desc="生成标注"):
                 idx = futures[future]
                 try:
                     result = future.result()
@@ -295,7 +295,7 @@ class GPT4oPlanGenerator:
                         error_message=str(e)
                     )))
         
-        # Sort by original index
+        # 按原始索引排序
         results.sort(key=lambda x: x[0])
         return [r[1] for r in results]
     
@@ -303,15 +303,14 @@ class GPT4oPlanGenerator:
         self,
         results: List[AnnotationResult]
     ) -> List[AnnotationResult]:
-        """Filter to keep only valid annotations.
+        """过滤只保留有效标注
         
         Args:
-            results: List of annotation results
+            results: 标注结果列表
             
         Returns:
-            Filtered list with only valid annotations
+            只包含有效标注的过滤列表
         """
         valid = [r for r in results if r.is_valid]
-        print(f"[GPT4o] Valid annotations: {len(valid)}/{len(results)} ({100*len(valid)/len(results):.1f}%)")
+        print(f"[GPT4o] 有效标注: {len(valid)}/{len(results)} ({100*len(valid)/len(results):.1f}%)")
         return valid
-

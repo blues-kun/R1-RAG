@@ -1,13 +1,13 @@
 """
-DAG Reward Evaluator for R1-RAG
+R1-RAG DAG奖励评估器
 
-The core reward computation module that integrates:
-1. Semantic similarity (E5 embedding)
-2. Structural similarity (Graph Edit Distance)
-3. Sub-goal completion (F1 score)
-4. Answer correctness (Exact Match)
+核心奖励计算模块，集成:
+1. 语义相似度（E5嵌入）
+2. 结构相似度（图编辑距离）
+3. 子目标完成度（F1分数）
+4. 答案正确性（精确匹配）
 
-Combined with progressive weight annealing for balanced training.
+结合渐进式权重退火实现平衡训练。
 """
 
 import re
@@ -23,66 +23,66 @@ from .structure_scorer import StructureScorer
 
 
 class DAGRewardEvaluator:
-    """Main reward evaluator for R1-RAG training.
+    """R1-RAG训练的主奖励评估器
     
-    Computes multi-dimensional rewards that guide the model to:
-    1. Generate well-structured reasoning plans (structure reward)
-    2. Ask semantically correct sub-questions (semantic reward)
-    3. Execute sub-goals correctly (step reward)
-    4. Arrive at correct final answer (outcome reward)
+    计算多维度奖励，引导模型:
+    1. 生成结构良好的推理规划（结构奖励）
+    2. 提出语义正确的子问题（语义奖励）
+    3. 正确执行子目标（步骤奖励）
+    4. 得出正确的最终答案（结果奖励）
     
-    The progressive annealing strategy ensures:
-    - Early training: Focus on learning good planning habits
-    - Late training: Focus on getting correct answers
+    渐进式退火策略确保:
+    - 训练早期: 关注学习良好的规划习惯
+    - 训练后期: 关注获得正确答案
     """
     
     def __init__(self, config: RewardConfig):
-        """Initialize the DAG reward evaluator.
+        """初始化DAG奖励评估器
         
         Args:
-            config: Reward configuration with weights and thresholds
+            config: 包含权重和阈值的奖励配置
         """
         self.config = config
         self.semantic_scorer = SemanticScorer(config.embedding_model_path)
         self.structure_scorer = StructureScorer()
         self.subgoal_scorer = SubGoalScorer()
         
-        # Regex patterns for parsing model output
+        # 解析模型输出的正则表达式模式
         self.plan_pattern = re.compile(r'<plan>(.+?)</plan>', re.DOTALL)
         self.subplan_pattern = re.compile(r'<subPlan>(.+?)</subPlan>', re.DOTALL)
         self.subanswer_pattern = re.compile(r'<subAnswer>\s*#(\d+)\s*=\s*(.*?)\s*</subAnswer>', re.DOTALL)
         self.answer_pattern = re.compile(r'<answer>(.*?)</answer>', re.DOTALL)
         
-    # ==================== Answer Extraction ====================
+    # ==================== 答案提取 ====================
     
     def extract_final_answer(self, response: str) -> Optional[str]:
-        """Extract final answer from model response.
+        """从模型响应中提取最终答案
         
         Args:
-            response: Full model response text
+            response: 完整的模型响应文本
             
         Returns:
-            Extracted answer string or None if not found
+            提取的答案字符串，未找到则返回None
         """
         matches = list(self.answer_pattern.finditer(response))
         if not matches:
             return None
-        # Return last match (in case of multiple attempts)
+        # 返回最后一个匹配（如果有多次尝试）
         return matches[-1].group(1).strip()
     
     def extract_plan(self, response: str) -> Optional[Dict[str, List[str]]]:
-        """Extract planning DAG from model response.
+        """从模型响应中提取规划DAG
         
-        Expected format in response:
+        响应中的预期格式:
         <plan>
-        {"Q1": ["sub-question 1", "#1"], "Q2": ["sub-question 2 using #1", "#2"]}
+        {"Q1": ["子问题1", "#1"], "Q2": ["使用#1的子问题2", "#2"]}
         </plan>
         
         Args:
-            response: Full model response
+            response: 完整的模型响应
             
         Returns:
-            Parsed plan dictionary or None if parsing fails
+            解析的规划字典，解析失败返回None
         """
         match = self.plan_pattern.search(response)
         if not match:
@@ -90,16 +90,16 @@ class DAGRewardEvaluator:
             
         try:
             plan_text = match.group(1).strip()
-            # Clean up common formatting issues
+            # 清理常见格式问题
             plan_text = plan_text.replace("json", "").replace("```", "")
             plan = json.loads(plan_text)
             
-            # Normalize placeholders: #1 -> <A1>
+            # 规范化占位符: #1 -> <A1>
             normalized = {}
             for key, value in plan.items():
                 new_value = []
                 for item in value:
-                    # Replace #N with <AN>
+                    # 将 #N 替换为 <AN>
                     normalized_item = re.sub(r"#(\d+)", r"<A\1>", str(item))
                     new_value.append(normalized_item)
                 normalized[key] = new_value
@@ -109,22 +109,22 @@ class DAGRewardEvaluator:
             return None
     
     def extract_execution_graph(self, response: str) -> Dict[str, Dict]:
-        """Extract execution results from subPlan blocks.
+        """从subPlan块中提取执行结果
         
-        Parses the intermediate answers from each subPlan to build
-        the execution graph showing what answer was found for each sub-question.
+        解析每个subPlan的中间答案，构建执行图，
+        显示每个子问题找到的答案。
         
         Args:
-            response: Full model response
+            response: 完整的模型响应
             
         Returns:
-            Execution graph {"Q1": {"answer": "..."}, "Q2": {...}}
+            执行图 {"Q1": {"answer": "..."}, "Q2": {...}}
         """
         graph = {}
         
         subplans = self.subplan_pattern.findall(response)
         for subplan in subplans:
-            # Extract <subAnswer> #N = answer </subAnswer>
+            # 提取 <subAnswer> #N = answer </subAnswer>
             match = self.subanswer_pattern.search(subplan)
             if match:
                 q_idx = match.group(1)
@@ -133,11 +133,11 @@ class DAGRewardEvaluator:
         
         return graph
     
-    # ==================== Answer Scoring ====================
+    # ==================== 答案评分 ====================
     
     @staticmethod
     def normalize_answer(text: str) -> str:
-        """Normalize answer text for exact match comparison."""
+        """规范化答案文本用于精确匹配比较"""
         text = text.lower()
         text = re.sub(r"\b(a|an|the)\b", " ", text)
         text = "".join(c for c in text if c not in string.punctuation)
@@ -145,14 +145,14 @@ class DAGRewardEvaluator:
         return text
     
     def exact_match(self, prediction: str, gold_answers: List[str]) -> float:
-        """Check if prediction exactly matches any gold answer.
+        """检查预测是否与任一黄金答案精确匹配
         
         Args:
-            prediction: Predicted answer
-            gold_answers: List of acceptable gold answers
+            prediction: 预测的答案
+            gold_answers: 可接受的黄金答案列表
             
         Returns:
-            1.0 if match, 0.0 otherwise
+            匹配返回1.0，否则返回0.0
         """
         if prediction is None:
             return 0.0
@@ -167,53 +167,53 @@ class DAGRewardEvaluator:
                 return 1.0
         return 0.0
     
-    # ==================== Format Checking ====================
+    # ==================== 格式检查 ====================
     
     def check_format(self, response: str) -> float:
-        """Check if response follows required format.
+        """检查响应是否遵循要求的格式
         
-        Required structure:
-        1. <think>...</think> before <plan>
-        2. <plan>...</plan> block with valid JSON
-        3. One or more <subPlan>...</subPlan> blocks
-        4. Each subPlan has <search>, <information>, <subAnswer>
-        5. Final <think>...</think> before <answer>
+        要求的结构:
+        1. <plan>前有<think>...</think>
+        2. <plan>...</plan>块包含有效JSON
+        3. 一个或多个<subPlan>...</subPlan>块
+        4. 每个subPlan包含<search>, <information>, <subAnswer>
+        5. <answer>前有最终的<think>...</think>
         
         Args:
-            response: Model response to check
+            response: 要检查的模型响应
             
         Returns:
-            1.0 if valid format, 0.0 otherwise
+            格式有效返回1.0，否则返回0.0
         """
         errors = []
         
-        # Check plan block with preceding think
+        # 检查plan块及其前面的think
         if not re.search(r"<think>.*?</think>\s*<plan>.*?</plan>", response, re.DOTALL):
-            errors.append("Missing <plan> block or preceding <think>")
+            errors.append("缺少<plan>块或前面的<think>")
         
-        # Check answer block with preceding think
+        # 检查answer块及其前面的think
         if not re.search(r"<think>.*?</think>\s*<answer>.*?</answer>", response, re.DOTALL):
-            errors.append("Missing <answer> block or preceding <think>")
+            errors.append("缺少<answer>块或前面的<think>")
         
-        # Check subPlan blocks
+        # 检查subPlan块
         subplans = re.findall(r"<subPlan>.*?</subPlan>", response, re.DOTALL)
         if not subplans:
-            errors.append("No <subPlan> blocks found")
+            errors.append("未找到<subPlan>块")
         
-        # Validate each subPlan structure
+        # 验证每个subPlan结构
         for i, sp in enumerate(subplans, 1):
             if not re.search(r"<think>.*?</think>", sp, re.DOTALL):
-                errors.append(f"subPlan {i}: missing <think>")
+                errors.append(f"subPlan {i}: 缺少<think>")
             if not re.search(r"<search>.*?</search>", sp, re.DOTALL):
-                errors.append(f"subPlan {i}: missing <search>")
+                errors.append(f"subPlan {i}: 缺少<search>")
             if not re.search(r"<information>.*?</information>", sp, re.DOTALL):
-                errors.append(f"subPlan {i}: missing <information>")
+                errors.append(f"subPlan {i}: 缺少<information>")
             if not re.search(r"<subAnswer>.*?</subAnswer>", sp, re.DOTALL):
-                errors.append(f"subPlan {i}: missing <subAnswer>")
+                errors.append(f"subPlan {i}: 缺少<subAnswer>")
         
         return 1.0 if not errors else 0.0
     
-    # ==================== Main Reward Computation ====================
+    # ==================== 主奖励计算 ====================
     
     def compute_reward(
         self,
@@ -224,29 +224,29 @@ class DAGRewardEvaluator:
         training_step: int = 0,
         verbose: bool = False
     ) -> Dict[str, float]:
-        """Compute comprehensive reward for model response.
+        """计算模型响应的综合奖励
         
-        Combines multiple reward signals with progressive annealing:
+        使用渐进式退火组合多个奖励信号:
         
         R_total = α(t) * R_process + R_outcome
         
-        where:
-        - α(t) decreases over training (annealing)
+        其中:
+        - α(t) 随训练递减（退火）
         - R_process = w_f * format + w_s * semantic + w_g * structure + w_step * step
-        - R_outcome = answer_score (exact match)
+        - R_outcome = answer_score（精确匹配）
         
         Args:
-            response: Model response text
-            gold_answer: List of acceptable gold answers
-            gold_plan: Golden planning DAG (optional)
-            gold_graph: Golden execution graph (optional)
-            training_step: Current training step for annealing
-            verbose: Whether to print detailed scores
+            response: 模型响应文本
+            gold_answer: 可接受的黄金答案列表
+            gold_plan: 黄金规划DAG（可选）
+            gold_graph: 黄金执行图（可选）
+            training_step: 当前训练步数，用于退火
+            verbose: 是否打印详细分数
             
         Returns:
-            Dictionary containing all component scores and final reward
+            包含所有分量分数和最终奖励的字典
         """
-        # Initialize scores
+        # 初始化分数
         scores = {
             "format_score": 0.0,
             "semantic_score": 0.0,
@@ -256,27 +256,27 @@ class DAGRewardEvaluator:
             "final_reward": 0.0
         }
         
-        # 1. Format compliance
+        # 1. 格式合规性
         scores["format_score"] = self.check_format(response)
         
-        # 2. Answer correctness (outcome reward)
+        # 2. 答案正确性（结果奖励）
         pred_answer = self.extract_final_answer(response)
         scores["answer_score"] = self.exact_match(pred_answer, gold_answer)
         
-        # 3. Process rewards (only if golden annotations available)
+        # 3. 过程奖励（仅当有黄金标注时）
         if gold_plan and gold_graph:
-            # Extract predicted plan and execution
+            # 提取预测的规划和执行
             pred_plan = self.extract_plan(response)
             pred_graph = self.extract_execution_graph(response)
             
             if pred_plan:
-                # Semantic similarity
+                # 语义相似度
                 semantic_score, mapping = self.semantic_scorer.compute_semantic_score(
                     pred_plan, gold_plan, threshold=self.config.node_match_threshold
                 )
                 scores["semantic_score"] = semantic_score
                 
-                # Structural similarity
+                # 结构相似度
                 ged, norm_ged, struct_match = self.structure_scorer.compute_structure_score(
                     pred_plan, gold_plan, mapping,
                     alpha=self.config.plan_alpha,
@@ -286,19 +286,19 @@ class DAGRewardEvaluator:
                 scores["ged_raw"] = ged
                 scores["ged_normalized"] = norm_ged
                 
-                # Sub-goal completion
+                # 子目标完成度
                 if pred_graph and gold_graph:
                     gold_graph_dict = gold_graph[0] if isinstance(gold_graph, list) else gold_graph
                     scores["step_score"] = self.subgoal_scorer.compute_step_score(
                         pred_graph, gold_graph_dict, mapping
                     )
         
-        # 4. Compute final reward with annealing
+        # 4. 计算带退火的最终奖励
         if self.config.validation_mode:
-            # Validation: only answer score matters
+            # 验证: 只关注答案分数
             scores["final_reward"] = scores["answer_score"]
         else:
-            # Training: combine process and outcome rewards
+            # 训练: 组合过程和结果奖励
             annealing_weight = self.config.get_annealing_weight(training_step)
             
             process_reward = (
@@ -312,28 +312,27 @@ class DAGRewardEvaluator:
             scores["annealing_weight"] = annealing_weight
             scores["final_reward"] = annealing_weight * process_reward + scores["answer_score"]
         
-        # Verbose logging
-        if verbose or random.random() < 0.02:  # Log ~2% of samples
+        # 详细日志
+        if verbose or random.random() < 0.02:  # 记录约2%的样本
             print(f"\n{'='*50}")
-            print(f"[DAG Evaluator] Training Step: {training_step}")
-            print(f"  Format:    {scores['format_score']:.3f}")
-            print(f"  Semantic:  {scores['semantic_score']:.3f}")
-            print(f"  Structure: {scores['structure_score']:.3f}")
-            print(f"  Step:      {scores['step_score']:.3f}")
-            print(f"  Answer:    {scores['answer_score']:.3f}")
-            print(f"  Annealing: {scores.get('annealing_weight', 1.0):.3f}")
-            print(f"  Final:     {scores['final_reward']:.3f}")
-            print(f"  Gold: {gold_answer}")
-            print(f"  Pred: {pred_answer}")
+            print(f"[DAG评估器] 训练步数: {training_step}")
+            print(f"  格式:    {scores['format_score']:.3f}")
+            print(f"  语义:    {scores['semantic_score']:.3f}")
+            print(f"  结构:    {scores['structure_score']:.3f}")
+            print(f"  步骤:    {scores['step_score']:.3f}")
+            print(f"  答案:    {scores['answer_score']:.3f}")
+            print(f"  退火:    {scores.get('annealing_weight', 1.0):.3f}")
+            print(f"  最终:    {scores['final_reward']:.3f}")
+            print(f"  黄金: {gold_answer}")
+            print(f"  预测: {pred_answer}")
         
         return scores
 
 
 class RewardManager:
-    """Manages reward computation for batch training.
+    """管理批量训练的奖励计算
     
-    Integrates with veRL training framework to provide
-    reward signals during GRPO optimization.
+    与veRL训练框架集成，在GRPO优化期间提供奖励信号。
     """
     
     def __init__(
@@ -342,12 +341,12 @@ class RewardManager:
         config: RewardConfig,
         num_examine: int = 1
     ):
-        """Initialize reward manager.
+        """初始化奖励管理器
         
         Args:
-            tokenizer: HuggingFace tokenizer for decoding
-            config: Reward configuration
-            num_examine: Number of samples to print per data source
+            tokenizer: HuggingFace tokenizer用于解码
+            config: 奖励配置
+            num_examine: 每个数据源打印的样本数
         """
         self.tokenizer = tokenizer
         self.evaluator = DAGRewardEvaluator(config)
@@ -355,14 +354,14 @@ class RewardManager:
         self.num_examine = num_examine
         
     def __call__(self, data, training_step: int = 0):
-        """Compute rewards for a batch of samples.
+        """计算批量样本的奖励
         
         Args:
-            data: DataProto batch from veRL
-            training_step: Current training step
+            data: 来自veRL的DataProto批次
+            training_step: 当前训练步数
             
         Returns:
-            Reward tensor with shape matching responses
+            形状与responses匹配的奖励张量
         """
         import torch
         
@@ -375,7 +374,7 @@ class RewardManager:
         for i in range(len(data)):
             item = data[i]
             
-            # Get prompt and response lengths
+            # 获取prompt和response长度
             prompt_ids = item.batch['prompts']
             prompt_len = prompt_ids.shape[-1]
             
@@ -385,10 +384,10 @@ class RewardManager:
             valid_response_len = item.batch['attention_mask'][prompt_len:].sum()
             valid_response_ids = response_ids[:valid_response_len]
             
-            # Decode response
+            # 解码响应
             response_text = self.tokenizer.decode(valid_response_ids)
             
-            # Get ground truth and metadata
+            # 获取ground truth和元数据
             ground_truth = item.non_tensor_batch['reward_model']['ground_truth']
             gold_answer = ground_truth.get('target', [])
             
@@ -396,13 +395,13 @@ class RewardManager:
             gold_plan = metadata.get('plan', None)
             gold_graph = metadata.get('graph', None)
             
-            # Fix numpy array issues
+            # 修复numpy数组问题
             if gold_plan:
                 gold_plan = {k: [str(x) for x in v] for k, v in gold_plan.items()}
             if gold_graph and isinstance(gold_graph, np.ndarray):
                 gold_graph = gold_graph.tolist()
             
-            # Compute reward
+            # 计算奖励
             scores = self.evaluator.compute_reward(
                 response=response_text,
                 gold_answer=gold_answer,
@@ -411,17 +410,16 @@ class RewardManager:
                 training_step=training_step
             )
             
-            # Assign reward to last token
+            # 将奖励赋给最后一个token
             reward_tensor[i, valid_response_len - 1] = scores['final_reward']
             
-            # Print examples
+            # 打印示例
             data_source = item.non_tensor_batch.get('data_source', 'unknown')
             if data_source not in examined:
                 examined[data_source] = 0
             if examined[data_source] < self.num_examine:
                 examined[data_source] += 1
-                print(f"\n[Sample from {data_source}]")
+                print(f"\n[来自 {data_source} 的样本]")
                 print(response_text[:500] + "..." if len(response_text) > 500 else response_text)
         
         return reward_tensor
-

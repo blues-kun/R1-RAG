@@ -1,11 +1,11 @@
 """
-Reward Module for R1-RAG
+R1-RAG 奖励模块
 
-Provides multi-dimensional reward computation for RL training:
-- DAG structural similarity (Graph Edit Distance)
-- Semantic similarity (E5 embedding)  
-- Sub-goal completion accuracy (F1 score)
-- Progressive weight scheduling
+提供多维度奖励计算用于强化学习训练:
+- DAG结构相似度（图编辑距离）
+- 语义相似度（E5嵌入）
+- 子目标完成准确度（F1分数）
+- 渐进式权重调度
 """
 
 from .dag_evaluator import DAGRewardEvaluator
@@ -19,4 +19,3 @@ __all__ = [
     "SemanticScorer", 
     "StructureScorer",
 ]
-

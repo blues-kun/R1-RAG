@@ -1,18 +1,17 @@
 """
-R1-RAG GRPO Training Entry Point
+R1-RAG GRPO训练入口
 
-Implements Group Relative Policy Optimization (GRPO) with:
-1. DAG-based process supervision (structure + semantic)
-2. Progressive weight annealing
-3. Multi-turn search-augmented generation
+实现带有以下特性的组相对策略优化（GRPO）:
+1. 基于DAG的过程监督（结构 + 语义）
+2. 渐进式权重退火
+3. 多轮搜索增强生成
 
-Architecture:
-    Question → Planning DAG → Sub-Goal Execution → Answer
-                   ↓                ↓
-              R_structure      R_semantic
-                   ↓                ↓
-              R_total = α(t) * R_process + R_outcome
-
+架构:
+    问题 → 规划DAG → 子目标执行 → 答案
+              ↓            ↓
+         R_structure   R_semantic
+              ↓            ↓
+         R_total = α(t) * R_process + R_outcome
 """
 
 import os
@@ -29,7 +28,7 @@ from verl.trainer.ppo.ray_trainer import RayPPOTrainer
 
 @dataclass
 class TrainingMetrics:
-    """Aggregated metrics for logging."""
+    """用于日志记录的聚合指标"""
     answer_accuracy: float
     format_compliance: float
     semantic_similarity: float  
@@ -39,16 +38,16 @@ class TrainingMetrics:
 
 
 class DAGRewardComputer:
-    """Computes DAG-based rewards for R1-RAG training.
+    """计算R1-RAG训练的DAG奖励
     
-    Integrates multiple reward signals:
-    - Format compliance: Does output follow expected structure?
-    - Semantic similarity: Are sub-questions correct? (E5 embedding)
-    - Structure match: Is dependency graph correct? (GED)
-    - Step completion: Are intermediate answers correct? (F1)
-    - Answer correctness: Is final answer correct? (EM)
+    集成多个奖励信号:
+    - 格式合规: 输出是否遵循预期结构?
+    - 语义相似度: 子问题是否正确?（E5嵌入）
+    - 结构匹配: 依赖图是否正确?（GED）
+    - 步骤完成: 中间答案是否正确?（F1）
+    - 答案正确性: 最终答案是否正确?（EM）
     
-    Uses progressive annealing to balance process vs outcome rewards.
+    使用渐进式退火来平衡过程和结果奖励。
     """
     
     def __init__(
@@ -64,21 +63,21 @@ class DAGRewardComputer:
         annealing_center: float = 0.9,
         annealing_temp: float = 10.0,
     ):
-        """Initialize DAG reward computer.
+        """初始化DAG奖励计算器
         
         Args:
-            embedding_model_path: Path to E5 model for semantic scoring
-            format_weight: Weight for format compliance reward
-            semantic_weight: Weight for semantic similarity reward
-            structure_weight: Weight for structural match reward  
-            step_weight: Weight for sub-goal completion reward
-            node_threshold: Min cosine similarity for node matching
-            ged_beta: GED normalization factor
-            annealing_steps: Total steps for annealing schedule
-            annealing_center: Center point of sigmoid (fraction of total)
-            annealing_temp: Temperature for sigmoid steepness
+            embedding_model_path: 用于语义评分的E5模型路径
+            format_weight: 格式合规奖励权重
+            semantic_weight: 语义相似度奖励权重
+            structure_weight: 结构匹配奖励权重
+            step_weight: 子目标完成奖励权重
+            node_threshold: 节点匹配的最小余弦相似度
+            ged_beta: GED归一化因子
+            annealing_steps: 退火调度的总步数
+            annealing_center: sigmoid的中心点（总数的分数）
+            annealing_temp: sigmoid陡峭度的温度
         """
-        # Store config
+        # 存储配置
         self.format_weight = format_weight
         self.semantic_weight = semantic_weight
         self.structure_weight = structure_weight
@@ -89,14 +88,14 @@ class DAGRewardComputer:
         self.annealing_center = annealing_center
         self.annealing_temp = annealing_temp
         
-        # Initialize scorers lazily to avoid import issues
+        # 延迟初始化评分器以避免导入问题
         self._semantic_scorer = None
         self._structure_scorer = None
         self._embedding_model_path = embedding_model_path
         
     @property
     def semantic_scorer(self):
-        """Lazy initialization of semantic scorer."""
+        """延迟初始化语义评分器"""
         if self._semantic_scorer is None:
             from r1_rag.reward import SemanticScorer
             self._semantic_scorer = SemanticScorer(self._embedding_model_path)
@@ -104,26 +103,26 @@ class DAGRewardComputer:
     
     @property
     def structure_scorer(self):
-        """Lazy initialization of structure scorer."""
+        """延迟初始化结构评分器"""
         if self._structure_scorer is None:
             from r1_rag.reward import StructureScorer
             self._structure_scorer = StructureScorer()
         return self._structure_scorer
     
     def get_annealing_weight(self, step: int) -> float:
-        """Calculate progressive annealing weight.
+        """计算渐进式退火权重
         
-        Uses sigmoid schedule:
+        使用sigmoid调度:
             α(t) = 1 / (1 + exp((t - center*T) / k))
         
-        Early training (α ≈ 1): Focus on process rewards
-        Late training (α → 0): Focus on outcome rewards
+        训练早期（α ≈ 1）: 关注过程奖励
+        训练后期（α → 0）: 关注结果奖励
         
         Args:
-            step: Current training step
+            step: 当前训练步数
             
         Returns:
-            Annealing weight in [0, 1]
+            退火权重，范围[0, 1]
         """
         t = float(step)
         T = float(self.annealing_steps)
@@ -141,22 +140,22 @@ class DAGRewardComputer:
         step: int = 0,
         verbose: bool = False,
     ) -> Dict[str, float]:
-        """Compute comprehensive reward for a single response.
+        """计算单个响应的综合奖励
         
         Args:
-            response: Model-generated response text
-            gold_answer: List of acceptable gold answers
-            gold_plan: Golden planning DAG (optional)
-            gold_graph: Golden execution graph (optional)
-            step: Current training step for annealing
-            verbose: Whether to print detailed scores
+            response: 模型生成的响应文本
+            gold_answer: 可接受的黄金答案列表
+            gold_plan: 黄金规划DAG（可选）
+            gold_graph: 黄金执行图（可选）
+            step: 当前训练步数，用于退火
+            verbose: 是否打印详细分数
             
         Returns:
-            Dictionary with component scores and final reward
+            包含分量分数和最终奖励的字典
         """
         from r1_rag.reward import DAGRewardEvaluator, RewardConfig
         
-        # Create config for this computation
+        # 为此次计算创建配置
         config = RewardConfig(
             embedding_model_path=self._embedding_model_path,
             node_match_threshold=self.node_threshold,
@@ -183,13 +182,13 @@ class DAGRewardComputer:
 
 
 class RewardManager:
-    """Manages reward computation for veRL training batches.
+    """管理veRL训练批次的奖励计算
     
-    This class interfaces with the veRL training framework to:
-    1. Decode model responses from token tensors
-    2. Extract ground truth and metadata from batch
-    3. Compute multi-dimensional rewards
-    4. Handle validation vs training modes
+    此类与veRL训练框架接口:
+    1. 从token张量解码模型响应
+    2. 从批次中提取ground truth和元数据
+    3. 计算多维度奖励
+    4. 处理验证vs训练模式
     """
     
     def __init__(
@@ -200,60 +199,60 @@ class RewardManager:
         format_weight: float = 0.1,
         validation: bool = False,
     ):
-        """Initialize reward manager.
+        """初始化奖励管理器
         
         Args:
-            tokenizer: HuggingFace tokenizer for decoding
-            num_examine: Number of samples to print per data source
-            e5_model_path: Path to E5 embedding model
-            format_weight: Weight for format compliance
-            validation: If True, only use answer score (no process rewards)
+            tokenizer: HuggingFace tokenizer用于解码
+            num_examine: 每个数据源打印的样本数
+            e5_model_path: E5嵌入模型路径
+            format_weight: 格式合规权重
+            validation: 如果True，只使用答案分数（无过程奖励）
         """
         self.tokenizer = tokenizer
         self.num_examine = num_examine
         self.validation = validation
         
-        # Initialize DAG reward computer
+        # 初始化DAG奖励计算器
         self.reward_computer = DAGRewardComputer(
             embedding_model_path=e5_model_path,
             format_weight=format_weight,
         )
         
-        print(f"[RewardManager] Initialized with E5 model: {e5_model_path}")
-        print(f"[RewardManager] Mode: {'Validation' if validation else 'Training'}")
+        print(f"[奖励管理器] 已初始化，E5模型: {e5_model_path}")
+        print(f"[奖励管理器] 模式: {'验证' if validation else '训练'}")
     
     def __call__(self, data: DataProto, step: int = 0) -> torch.Tensor:
-        """Compute rewards for a batch of samples.
+        """计算批量样本的奖励
         
         Args:
-            data: DataProto batch from veRL containing:
+            data: 来自veRL的DataProto批次，包含:
                 - batch['prompts']: Prompt token IDs
                 - batch['responses']: Response token IDs  
-                - batch['attention_mask']: Valid token mask
-                - non_tensor_batch['reward_model']: Ground truth info
-                - non_tensor_batch['metadata']: Plan and graph annotations
-            step: Current training step for annealing
+                - batch['attention_mask']: 有效token掩码
+                - non_tensor_batch['reward_model']: Ground truth信息
+                - non_tensor_batch['metadata']: Plan和graph标注
+            step: 当前训练步数，用于退火
             
         Returns:
-            Reward tensor with shape matching responses
+            形状与responses匹配的奖励张量
         """
-        # Check for pre-computed rewards
+        # 检查预计算的奖励
         if 'rm_scores' in data.batch.keys():
             return data.batch['rm_scores']
         
-        # Initialize reward tensor
+        # 初始化奖励张量
         reward_tensor = torch.zeros_like(
             data.batch['responses'], 
             dtype=torch.float32
         )
         
-        # Track printed samples per data source
+        # 跟踪每个数据源打印的样本
         examined = {}
         
         for i in range(len(data)):
             item = data[i]
             
-            # Get prompt/response boundaries
+            # 获取prompt/response边界
             prompt_ids = item.batch['prompts']
             prompt_len = prompt_ids.shape[-1]
             
@@ -263,25 +262,25 @@ class RewardManager:
             valid_response_len = item.batch['attention_mask'][prompt_len:].sum()
             valid_response_ids = response_ids[:valid_response_len]
             
-            # Decode response
+            # 解码响应
             response_text = self.tokenizer.decode(valid_response_ids)
             
-            # Get ground truth
+            # 获取ground truth
             ground_truth = item.non_tensor_batch['reward_model']['ground_truth']
             gold_answer = ground_truth.get('target', [])
             
-            # Get metadata (plan and graph annotations)
+            # 获取元数据（plan和graph标注）
             metadata = item.non_tensor_batch.get('metadata', {})
             gold_plan = metadata.get('plan', None)
             gold_graph = metadata.get('graph', None)
             
-            # Handle numpy arrays in metadata
+            # 处理元数据中的numpy数组
             if gold_plan:
                 gold_plan = {k: [str(x) for x in v] for k, v in gold_plan.items()}
             if gold_graph and isinstance(gold_graph, np.ndarray):
                 gold_graph = gold_graph.tolist()
             
-            # Compute reward
+            # 计算奖励
             scores = self.reward_computer.compute(
                 response=response_text,
                 gold_answer=gold_answer,
@@ -290,15 +289,15 @@ class RewardManager:
                 step=step,
             )
             
-            # Assign reward to last valid token
+            # 将奖励赋给最后一个有效token
             if self.validation:
-                # Validation: only answer correctness matters
+                # 验证: 只有答案正确性重要
                 reward_tensor[i, valid_response_len - 1] = scores['answer_score']
             else:
-                # Training: use full reward with annealing
+                # 训练: 使用带退火的完整奖励
                 reward_tensor[i, valid_response_len - 1] = scores['final_reward']
             
-            # Print sample examples
+            # 打印样本示例
             data_source = item.non_tensor_batch.get('data_source', 'unknown')
             if data_source not in examined:
                 examined[data_source] = 0
@@ -315,32 +314,32 @@ class RewardManager:
         response: str, 
         scores: Dict[str, float]
     ):
-        """Print a sample response with scores for debugging."""
+        """打印带分数的样本响应用于调试"""
         print(f"\n{'='*60}")
-        print(f"[Sample from {data_source}]")
+        print(f"[来自 {data_source} 的样本]")
         print(f"{'='*60}")
         
-        # Truncate long responses
+        # 截断过长响应
         if len(response) > 800:
-            response = response[:400] + "\n...[truncated]...\n" + response[-400:]
+            response = response[:400] + "\n...[已截断]...\n" + response[-400:]
         print(response)
         
-        print(f"\n[Scores]")
-        print(f"  Format:    {scores.get('format_score', 0):.3f}")
-        print(f"  Semantic:  {scores.get('semantic_score', 0):.3f}")
-        print(f"  Structure: {scores.get('structure_score', 0):.3f}")
-        print(f"  Step:      {scores.get('step_score', 0):.3f}")
-        print(f"  Answer:    {scores.get('answer_score', 0):.3f}")
-        print(f"  Final:     {scores.get('final_reward', 0):.3f}")
+        print(f"\n[分数]")
+        print(f"  格式:    {scores.get('format_score', 0):.3f}")
+        print(f"  语义:    {scores.get('semantic_score', 0):.3f}")
+        print(f"  结构:    {scores.get('structure_score', 0):.3f}")
+        print(f"  步骤:    {scores.get('step_score', 0):.3f}")
+        print(f"  答案:    {scores.get('answer_score', 0):.3f}")
+        print(f"  最终:    {scores.get('final_reward', 0):.3f}")
 
 
 class GRPOTrainer:
-    """High-level trainer class for R1-RAG GRPO training.
+    """R1-RAG GRPO训练的高级训练器类
     
-    Wraps veRL's RayPPOTrainer with R1-RAG specific:
-    - DAG-based reward functions
-    - Multi-turn generation with search
-    - Progressive annealing schedule
+    包装veRL的RayPPOTrainer，带有R1-RAG特定的:
+    - 基于DAG的奖励函数
+    - 多轮搜索生成
+    - 渐进式退火调度
     """
     
     def __init__(
@@ -349,18 +348,18 @@ class GRPOTrainer:
         tokenizer,
         e5_model_path: str = "intfloat/e5-base-v2",
     ):
-        """Initialize GRPO trainer.
+        """初始化GRPO训练器
         
         Args:
-            config: Hydra/OmegaConf configuration
+            config: Hydra/OmegaConf配置
             tokenizer: HuggingFace tokenizer
-            e5_model_path: Path to E5 embedding model
+            e5_model_path: E5嵌入模型路径
         """
         self.config = config
         self.tokenizer = tokenizer
         self.e5_model_path = e5_model_path
         
-        # Create reward functions
+        # 创建奖励函数
         self.reward_fn = RewardManager(
             tokenizer=tokenizer,
             num_examine=0,
@@ -378,10 +377,10 @@ class GRPOTrainer:
         self.trainer = None
     
     def setup_workers(self):
-        """Setup Ray workers for distributed training."""
+        """设置Ray worker用于分布式训练"""
         from verl.trainer.ppo.ray_trainer import ResourcePoolManager, Role
         
-        # Select worker classes based on strategy
+        # 根据策略选择worker类
         if self.config.actor_rollout_ref.actor.strategy == 'fsdp':
             from verl.workers.fsdp_workers import ActorRolloutRefWorker, CriticWorker
             from verl.single_controller.ray import RayWorkerGroup
@@ -392,16 +391,16 @@ class GRPOTrainer:
             from verl.single_controller.ray.megatron import NVMegatronRayWorkerGroup
             ray_worker_group_cls = NVMegatronRayWorkerGroup
         else:
-            raise ValueError(f"Unknown strategy: {self.config.actor_rollout_ref.actor.strategy}")
+            raise ValueError(f"未知策略: {self.config.actor_rollout_ref.actor.strategy}")
         
-        # Setup role-worker mapping
+        # 设置角色-worker映射
         role_worker_mapping = {
             Role.ActorRollout: ray.remote(ActorRolloutRefWorker),
             Role.Critic: ray.remote(CriticWorker),
             Role.RefPolicy: ray.remote(ActorRolloutRefWorker),
         }
         
-        # Resource pool configuration
+        # 资源池配置
         global_pool_id = 'global_pool'
         resource_pool_spec = {
             global_pool_id: [self.config.trainer.n_gpus_per_node] * self.config.trainer.nnodes,
@@ -412,7 +411,7 @@ class GRPOTrainer:
             Role.RefPolicy: global_pool_id,
         }
         
-        # Handle optional reward model
+        # 处理可选的奖励模型
         if self.config.reward_model.enable:
             if self.config.reward_model.strategy == 'fsdp':
                 from verl.workers.fsdp_workers import RewardModelWorker
@@ -423,7 +422,7 @@ class GRPOTrainer:
             role_worker_mapping[Role.RewardModel] = ray.remote(RewardModelWorker)
             mapping[Role.RewardModel] = global_pool_id
         
-        # Create trainer
+        # 创建训练器
         resource_pool_manager = ResourcePoolManager(
             resource_pool_spec=resource_pool_spec,
             mapping=mapping
@@ -442,7 +441,7 @@ class GRPOTrainer:
         return self.trainer
     
     def train(self):
-        """Run training loop."""
+        """运行训练循环"""
         if self.trainer is None:
             self.setup_workers()
         
@@ -450,11 +449,11 @@ class GRPOTrainer:
         self.trainer.fit()
 
 
-# ============== Entry Points ==============
+# ============== 入口点 ==============
 
 @hydra.main(config_path='../../../configs', config_name='grpo_qwen_3b', version_base=None)
 def main(config):
-    """Main entry point for GRPO training."""
+    """GRPO训练的主入口"""
     if not ray.is_initialized():
         ray.init(
             runtime_env={
@@ -470,26 +469,26 @@ def main(config):
 
 @ray.remote
 def train_task(config):
-    """Ray remote task for training."""
+    """Ray远程训练任务"""
     from pprint import pprint
     from omegaconf import OmegaConf
     from verl.utils.fs import copy_local_path_from_hdfs
     from verl.utils import hf_tokenizer
     
-    # Print configuration
+    # 打印配置
     pprint(OmegaConf.to_container(config, resolve=True))
     OmegaConf.resolve(config)
     
-    # Download model checkpoint if needed
+    # 如需要下载模型检查点
     local_path = copy_local_path_from_hdfs(config.actor_rollout_ref.model.path)
     
-    # Initialize tokenizer
+    # 初始化tokenizer
     tokenizer = hf_tokenizer(local_path)
     
-    # Get E5 model path
+    # 获取E5模型路径
     e5_model_path = getattr(config, 'e5_model_path', 'intfloat/e5-base-v2')
     
-    # Create and run trainer
+    # 创建并运行训练器
     trainer = GRPOTrainer(
         config=config,
         tokenizer=tokenizer,
@@ -499,47 +498,47 @@ def train_task(config):
 
 
 def test_reward_computation():
-    """Test reward computation with sample data."""
+    """使用样本数据测试奖励计算"""
     from r1_rag.reward import DAGRewardEvaluator, RewardConfig
     
     config = RewardConfig()
     evaluator = DAGRewardEvaluator(config)
     
-    # Sample response
+    # 样本响应
     response = """
-<think> This is a multi-hop question. I need to decompose it. </think>
+<think> 这是一个多跳问题，我需要分解它。 </think>
 <plan>
-{"Q1": ["Who created the Money in the Bank match?", "#1"], "Q2": ["Which film was directed by #1?", "#2"]}
+{"Q1": ["谁执导了《泰坦尼克号》？", "#1"], "Q2": ["#1的第一部电影是什么？", "#2"]}
 </plan>
 
 <subPlan>
-    <think> Let me search for the creator. </think>
-    <search> Money in the Bank ladder match creator </search>
-    <information> The Money in the Bank ladder match was created by Chris Jericho. </information>
-    <think> Found it - Chris Jericho. </think>
-    <subAnswer> #1 = Chris Jericho </subAnswer>
+    <think> 让我搜索导演信息。 </think>
+    <search> 泰坦尼克号 导演 </search>
+    <information> 《泰坦尼克号》由詹姆斯·卡梅隆执导。 </information>
+    <think> 找到了 - 詹姆斯·卡梅隆。 </think>
+    <subAnswer> #1 = 詹姆斯·卡梅隆 </subAnswer>
 </subPlan>
 
 <subPlan>
-    <think> Now I need to find what film Chris Jericho directed. </think>
-    <search> Chris Jericho directed film </search>
-    <information> Chris Jericho directed "But I'm Chris Jericho!". </information>
-    <think> The film is "But I'm Chris Jericho!". </think>
-    <subAnswer> #2 = But I'm Chris Jericho! </subAnswer>
+    <think> 现在我需要找詹姆斯·卡梅隆导演的第一部电影。 </think>
+    <search> 詹姆斯·卡梅隆 第一部电影 </search>
+    <information> 詹姆斯·卡梅隆的导演处女作是《食人鱼2》。 </information>
+    <think> 第一部电影是《食人鱼2》。 </think>
+    <subAnswer> #2 = 食人鱼2 </subAnswer>
 </subPlan>
 
-<think> I have the answer now. </think>
-<answer> But I'm Chris Jericho! </answer>
+<think> 现在我有答案了。 </think>
+<answer> 食人鱼2 </answer>
     """.strip()
     
-    gold_answer = ["But I'm Chris Jericho!"]
+    gold_answer = ["食人鱼2", "Piranha II: The Spawning"]
     gold_plan = {
-        "Q1": ["Who created the Money in the Bank ladder match?", "<A1>"],
-        "Q2": ["Which film was directed by <A1>?", "<A2>"],
+        "Q1": ["谁执导了《泰坦尼克号》？", "<A1>"],
+        "Q2": ["<A1>的第一部电影是什么？", "<A2>"],
     }
     gold_graph = [{
-        "Q1": {"answer": "Chris Jericho"},
-        "Q2": {"answer": "But I'm Chris Jericho!"},
+        "Q1": {"answer": "詹姆斯·卡梅隆"},
+        "Q2": {"answer": "食人鱼2"},
     }]
     
     scores = evaluator.compute_reward(
@@ -552,13 +551,13 @@ def test_reward_computation():
     )
     
     print("\n" + "="*50)
-    print("Test Results:")
-    print(f"  Format Score: {scores['format_score']:.3f}")
-    print(f"  Semantic Score: {scores['semantic_score']:.3f}")
-    print(f"  Structure Score: {scores['structure_score']:.3f}")
-    print(f"  Step Score: {scores['step_score']:.3f}")
-    print(f"  Answer Score: {scores['answer_score']:.3f}")
-    print(f"  Final Reward: {scores['final_reward']:.3f}")
+    print("测试结果:")
+    print(f"  格式分数: {scores['format_score']:.3f}")
+    print(f"  语义分数: {scores['semantic_score']:.3f}")
+    print(f"  结构分数: {scores['structure_score']:.3f}")
+    print(f"  步骤分数: {scores['step_score']:.3f}")
+    print(f"  答案分数: {scores['answer_score']:.3f}")
+    print(f"  最终奖励: {scores['final_reward']:.3f}")
 
 
 if __name__ == '__main__':
@@ -568,4 +567,3 @@ if __name__ == '__main__':
         test_reward_computation()
     else:
         main()
-

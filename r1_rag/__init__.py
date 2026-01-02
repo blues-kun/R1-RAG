@@ -1,29 +1,28 @@
 """
-R1-RAG: Reasoning-First Retrieval-Augmented Generation
+R1-RAG: 推理优先的检索增强生成框架
 
-A reinforcement learning framework for multi-hop question answering
-with explicit global planning and dense process supervision.
+一个用于多跳问答的强化学习框架，具有显式全局规划和密集过程监督。
 
-Key Features:
-- DAG-based planning structure for multi-hop reasoning
-- Dual reward mechanism: structural (GED) + semantic (E5 similarity)
-- Progressive weight annealing for balanced training
-- Compatible with Qwen2.5-3B-Instruct backbone
+核心特性:
+- 基于DAG的规划结构，用于多跳推理
+- 双重奖励机制：结构奖励(GED) + 语义奖励(E5相似度)
+- 渐进式权重退火，实现平衡训练
+- 兼容 Qwen2.5-3B-Instruct 骨干网络
 
-Core Components:
-- reward/: DAG-based reward computation (GED + E5)
-- data/: Data processing and GPT-4o annotation
-- agent/: Multi-turn generation with search
-- trainer/: GRPO training integration with veRL
-- retriever/: E5-based dense retrieval server
+核心模块:
+- reward/: DAG奖励计算（图编辑距离 + E5语义）
+- data/: 数据处理和GPT-4o标注
+- agent/: 多轮搜索生成
+- trainer/: GRPO训练与veRL集成
+- retriever/: E5稠密检索服务
 
-Version: 1.0.0
+版本: 1.0.0
 """
 
 __version__ = "1.0.0"
-__author__ = "Your Name"
+__author__ = "R1-RAG Team"
 
-# Reward Module
+# 奖励模块
 from .reward import (
     DAGRewardEvaluator,
     RewardConfig,
@@ -31,7 +30,7 @@ from .reward import (
     StructureScorer,
 )
 
-# Data Module
+# 数据模块
 from .data import (
     PlanningDataProcessor,
     GPT4oPlanGenerator,
@@ -39,26 +38,26 @@ from .data import (
     AnnotationResult,
 )
 
-# Agent Module
+# Agent模块
 from .agent import (
     LLMGenerationManager,
     GenerationConfig,
 )
 
 __all__ = [
-    # Reward
+    # 奖励相关
     "DAGRewardEvaluator",
     "RewardConfig",
     "SemanticScorer",
     "StructureScorer",
     
-    # Data
+    # 数据相关
     "PlanningDataProcessor",
     "GPT4oPlanGenerator",
     "TrainingSample",
     "AnnotationResult",
     
-    # Agent
+    # Agent相关
     "LLMGenerationManager",
     "GenerationConfig",
 ]

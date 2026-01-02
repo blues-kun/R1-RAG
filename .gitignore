@@ -125,3 +125,7 @@ wandb/
 
 # Mac
 .DS_Store
+
+# Temporary files
+=*
+requirements_temp.txt

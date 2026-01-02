@@ -1,10 +1,10 @@
 """
-R1-RAG Data Module
+R1-RAG 数据模块
 
-Provides data processing and annotation generation:
-- Multi-hop QA dataset loading (HotpotQA, 2Wiki, Musique)
-- GPT-4o golden plan annotation generation
-- Training data export (parquet format)
+提供数据处理和标注生成:
+- 多跳问答数据集加载（HotpotQA, 2Wiki, Musique）
+- GPT-4o黄金规划标注生成
+- 训练数据导出（parquet格式）
 """
 
 from .processor import PlanningDataProcessor, TrainingSample
@@ -16,15 +16,15 @@ from .prompts import (
 )
 
 __all__ = [
-    # Data Processing
+    # 数据处理
     "PlanningDataProcessor",
     "TrainingSample",
     
-    # Annotation Generation
+    # 标注生成
     "GPT4oPlanGenerator",
     "AnnotationResult",
     
-    # Prompt Templates
+    # Prompt模板
     "PLANNING_PROMPT_TEMPLATE",
     "ONE_SHOT_EXAMPLE",
     "GPT4O_PLAN_ANNOTATION_PROMPT",

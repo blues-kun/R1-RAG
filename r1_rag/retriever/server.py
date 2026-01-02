@@ -1,12 +1,12 @@
 """
-Retrieval Server for R1-RAG
+R1-RAG 检索服务器
 
-FastAPI-based retrieval service that:
-1. Loads pre-built FAISS index
-2. Handles batch retrieval requests
-3. Returns top-k relevant documents
+基于FastAPI的检索服务:
+1. 加载预构建的FAISS索引
+2. 处理批量检索请求
+3. 返回top-k相关文档
 
-Optimized for multi-turn RAG training.
+针对多轮RAG训练优化。
 """
 
 import os
@@ -22,38 +22,38 @@ from pydantic import BaseModel
 import uvicorn
 
 
-# ============== Request/Response Models ==============
+# ============== 请求/响应模型 ==============
 
 class RetrievalRequest(BaseModel):
-    """Request model for retrieval endpoint."""
+    """检索端点的请求模型"""
     queries: List[str]
     topk: int = 3
     return_scores: bool = True
 
 
 class DocumentResult(BaseModel):
-    """Single document result."""
+    """单个文档结果"""
     docid: str
     contents: str
     score: Optional[float] = None
 
 
 class RetrievalResponse(BaseModel):
-    """Response model for retrieval endpoint."""
+    """检索端点的响应模型"""
     result: List[List[Dict[str, Any]]]
     query_count: int
 
 
-# ============== Retrieval Server ==============
+# ============== 检索服务器 ==============
 
 class RetrievalServer:
-    """E5-based dense retrieval server.
+    """基于E5的稠密检索服务器
     
-    Features:
-    - Efficient batch encoding with E5 model
-    - FAISS index for fast similarity search
-    - Document corpus loading from JSONL
-    - GPU acceleration when available
+    特性:
+    - 使用E5模型进行高效批量编码
+    - FAISS索引用于快速相似度搜索
+    - 从JSONL加载文档语料库
+    - 可用时GPU加速
     """
     
     def __init__(
@@ -63,57 +63,57 @@ class RetrievalServer:
         model_path: str = "intfloat/e5-base-v2",
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
     ):
-        """Initialize retrieval server.
+        """初始化检索服务器
         
         Args:
-            index_path: Path to FAISS index file
-            corpus_path: Path to document corpus JSONL
-            model_path: E5 model identifier or path
-            device: Device for encoding (cuda/cpu)
+            index_path: FAISS索引文件路径
+            corpus_path: 文档语料库JSONL路径
+            model_path: E5模型标识符或路径
+            device: 编码设备（cuda/cpu）
         """
         self.device = device
         self.model_path = model_path
         
-        # Load components
-        print(f"[Retriever] Loading E5 model: {model_path}")
+        # 加载组件
+        print(f"[检索器] 加载E5模型: {model_path}")
         self._load_encoder()
         
-        print(f"[Retriever] Loading index: {index_path}")
+        print(f"[检索器] 加载索引: {index_path}")
         self._load_index(index_path)
         
-        print(f"[Retriever] Loading corpus: {corpus_path}")
+        print(f"[检索器] 加载语料库: {corpus_path}")
         self._load_corpus(corpus_path)
         
-        print(f"[Retriever] Ready! Corpus size: {len(self.corpus)}")
+        print(f"[检索器] 就绪! 语料库大小: {len(self.corpus)}")
     
     def _load_encoder(self):
-        """Load E5 sentence transformer model."""
+        """加载E5 sentence transformer模型"""
         from sentence_transformers import SentenceTransformer
         
         self.encoder = SentenceTransformer(self.model_path, device=self.device)
     
     def _load_index(self, index_path: str):
-        """Load FAISS index from file."""
+        """从文件加载FAISS索引"""
         import faiss
         
         if not os.path.exists(index_path):
-            raise FileNotFoundError(f"Index file not found: {index_path}")
+            raise FileNotFoundError(f"索引文件未找到: {index_path}")
         
         self.index = faiss.read_index(index_path)
         
-        # Move to GPU if available
+        # 如果可用则移到GPU
         if self.device == "cuda":
             try:
                 res = faiss.StandardGpuResources()
                 self.index = faiss.index_cpu_to_gpu(res, 0, self.index)
-                print("[Retriever] Index moved to GPU")
+                print("[检索器] 索引已移至GPU")
             except Exception as e:
-                print(f"[Retriever] GPU index failed, using CPU: {e}")
+                print(f"[检索器] GPU索引失败，使用CPU: {e}")
     
     def _load_corpus(self, corpus_path: str):
-        """Load document corpus from JSONL file."""
+        """从JSONL文件加载文档语料库"""
         if not os.path.exists(corpus_path):
-            raise FileNotFoundError(f"Corpus file not found: {corpus_path}")
+            raise FileNotFoundError(f"语料库文件未找到: {corpus_path}")
         
         self.corpus = []
         with open(corpus_path, 'r', encoding='utf-8') as f:
@@ -122,15 +122,15 @@ class RetrievalServer:
                 self.corpus.append(doc)
     
     def encode_queries(self, queries: List[str]) -> np.ndarray:
-        """Encode queries into dense vectors.
+        """将查询编码为稠密向量
         
         Args:
-            queries: List of query strings
+            queries: 查询字符串列表
             
         Returns:
-            Query embeddings of shape (N, dim)
+            形状为 (N, dim) 的查询嵌入
         """
-        # E5 requires "query: " prefix for queries
+        # E5要求查询添加"query: "前缀
         prefixed = [f"query: {q}" for q in queries]
         embeddings = self.encoder.encode(
             prefixed,
@@ -145,23 +145,23 @@ class RetrievalServer:
         topk: int = 3,
         return_scores: bool = True,
     ) -> List[List[Dict[str, Any]]]:
-        """Search for relevant documents.
+        """搜索相关文档
         
         Args:
-            queries: List of query strings
-            topk: Number of results per query
-            return_scores: Whether to include similarity scores
+            queries: 查询字符串列表
+            topk: 每个查询的结果数量
+            return_scores: 是否包含相似度分数
             
         Returns:
-            List of result lists, one per query
+            结果列表的列表，每个查询一个
         """
-        # Encode queries
+        # 编码查询
         query_vectors = self.encode_queries(queries)
         
-        # Search index
+        # 搜索索引
         scores, indices = self.index.search(query_vectors, topk)
         
-        # Format results
+        # 格式化结果
         results = []
         for query_idx, (query_scores, query_indices) in enumerate(zip(scores, indices)):
             query_results = []
@@ -186,37 +186,37 @@ class RetrievalServer:
         return results
 
 
-# ============== FastAPI Application ==============
+# ============== FastAPI应用 ==============
 
 app = FastAPI(
-    title="R1-RAG Retrieval Server",
-    description="E5-based dense retrieval for multi-hop QA",
+    title="R1-RAG 检索服务器",
+    description="用于多跳问答的E5稠密检索",
     version="1.0.0",
 )
 
-# Global server instance
+# 全局服务器实例
 _server: Optional[RetrievalServer] = None
 
 
 def get_server() -> RetrievalServer:
-    """Get the global retrieval server instance."""
+    """获取全局检索服务器实例"""
     if _server is None:
         raise HTTPException(
             status_code=503, 
-            detail="Retrieval server not initialized"
+            detail="检索服务器未初始化"
         )
     return _server
 
 
 @app.post("/retrieve", response_model=RetrievalResponse)
 async def retrieve(request: RetrievalRequest):
-    """Retrieve relevant documents for queries.
+    """检索查询的相关文档
     
     Args:
-        request: RetrievalRequest with queries and parameters
+        request: 包含查询和参数的RetrievalRequest
         
     Returns:
-        RetrievalResponse with search results
+        包含搜索结果的RetrievalResponse
     """
     server = get_server()
     
@@ -238,36 +238,35 @@ async def retrieve(request: RetrievalRequest):
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """健康检查端点"""
     return {"status": "healthy", "corpus_size": len(_server.corpus) if _server else 0}
 
 
-# ============== CLI Entry Point ==============
+# ============== CLI入口 ==============
 
 def main():
-    """Run retrieval server from command line."""
+    """从命令行运行检索服务器"""
     global _server
     
-    parser = argparse.ArgumentParser(description="R1-RAG Retrieval Server")
-    parser.add_argument("--index_path", type=str, required=True, help="Path to FAISS index")
-    parser.add_argument("--corpus_path", type=str, required=True, help="Path to corpus JSONL")
-    parser.add_argument("--model_path", type=str, default="intfloat/e5-base-v2", help="E5 model path")
-    parser.add_argument("--host", type=str, default="0.0.0.0", help="Server host")
-    parser.add_argument("--port", type=int, default=8000, help="Server port")
+    parser = argparse.ArgumentParser(description="R1-RAG 检索服务器")
+    parser.add_argument("--index_path", type=str, required=True, help="FAISS索引路径")
+    parser.add_argument("--corpus_path", type=str, required=True, help="语料库JSONL路径")
+    parser.add_argument("--model_path", type=str, default="intfloat/e5-base-v2", help="E5模型路径")
+    parser.add_argument("--host", type=str, default="0.0.0.0", help="服务器主机")
+    parser.add_argument("--port", type=int, default=8000, help="服务器端口")
     
     args = parser.parse_args()
     
-    # Initialize server
+    # 初始化服务器
     _server = RetrievalServer(
         index_path=args.index_path,
         corpus_path=args.corpus_path,
         model_path=args.model_path,
     )
     
-    # Run FastAPI
+    # 运行FastAPI
     uvicorn.run(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":
     main()
-

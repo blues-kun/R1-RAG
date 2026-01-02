@@ -1,11 +1,11 @@
 """
-Semantic Scorer for R1-RAG
+R1-RAG 语义评分器
 
-Uses E5 embedding model to compute semantic similarity between:
-- Predicted sub-questions and golden sub-questions
-- Predicted intermediate answers and golden answers
+使用E5嵌入模型计算语义相似度:
+- 预测子问题与黄金子问题的相似度
+- 预测中间答案与黄金答案的相似度
 
-This provides the "content reward" signal for RL training.
+为强化学习训练提供"内容奖励"信号。
 """
 
 import re
@@ -17,36 +17,36 @@ from sentence_transformers import SentenceTransformer, util
 
 
 class SemanticScorer:
-    """Computes semantic similarity between planning DAGs using embeddings.
+    """使用嵌入计算规划DAG之间的语义相似度
     
-    The scorer uses a pre-trained E5 model to:
-    1. Encode sub-questions into dense vectors
-    2. Compute pairwise cosine similarities
-    3. Find optimal node mappings between predicted and golden plans
+    评分器使用预训练的E5模型来:
+    1. 将子问题编码为稠密向量
+    2. 计算成对余弦相似度
+    3. 在预测和黄金规划之间找到最优节点映射
     
-    Key insight: Semantic similarity captures whether the model asks
-    the "right questions" even if phrasing differs from golden plan.
+    核心洞察: 语义相似度能捕捉模型是否提出了"正确的问题"，
+    即使措辞与黄金规划不同。
     """
     
     def __init__(self, model_path: str = "intfloat/e5-base-v2"):
-        """Initialize semantic scorer with E5 model.
+        """初始化语义评分器
         
         Args:
-            model_path: Path to sentence transformer model
+            model_path: sentence transformer模型路径
         """
         self.model = SentenceTransformer(model_path)
         self.placeholder_pattern = re.compile(r"<A(\d+)>")
         
     def encode_questions(self, questions: List[str]) -> np.ndarray:
-        """Encode questions into dense embeddings.
+        """将问题编码为稠密嵌入
         
         Args:
-            questions: List of question strings
+            questions: 问题字符串列表
             
         Returns:
-            Embedding matrix of shape (N, embedding_dim)
+            形状为 (N, embedding_dim) 的嵌入矩阵
         """
-        # Normalize placeholders to generic "entity" for better matching
+        # 将占位符规范化为通用的"entity"以获得更好的匹配
         normalized = []
         for q in questions:
             normalized_q = self.placeholder_pattern.sub("entity", q)
@@ -59,14 +59,14 @@ class SemanticScorer:
         pred_questions: List[str], 
         gold_questions: List[str]
     ) -> np.ndarray:
-        """Compute pairwise cosine similarity between question sets.
+        """计算问题集之间的成对余弦相似度
         
         Args:
-            pred_questions: Predicted sub-questions
-            gold_questions: Golden sub-questions
+            pred_questions: 预测的子问题
+            gold_questions: 黄金子问题
             
         Returns:
-            Similarity matrix of shape (len(gold), len(pred))
+            形状为 (len(gold), len(pred)) 的相似度矩阵
         """
         pred_emb = self.encode_questions(pred_questions)
         gold_emb = self.encode_questions(gold_questions)
@@ -80,25 +80,25 @@ class SemanticScorer:
         pred_nodes: List[str],
         threshold: float = 0.7
     ) -> Tuple[Dict[str, str], List[float]]:
-        """Find optimal node mapping using greedy matching.
+        """使用贪婪匹配找到最优节点映射
         
-        Uses cosine similarity to match predicted nodes to golden nodes.
-        Only matches above threshold are considered valid.
+        使用余弦相似度将预测节点匹配到黄金节点。
+        只有超过阈值的匹配才被视为有效。
         
         Args:
-            similarity_matrix: Pairwise similarities (gold x pred)
-            gold_nodes: Golden node IDs
-            pred_nodes: Predicted node IDs  
-            threshold: Minimum similarity for valid match
+            similarity_matrix: 成对相似度 (gold x pred)
+            gold_nodes: 黄金节点ID
+            pred_nodes: 预测节点ID
+            threshold: 有效匹配的最小相似度
             
         Returns:
-            Tuple of (mapping dict, similarity scores for matched nodes)
+            (映射字典, 匹配节点的相似度分数) 元组
         """
         mapping = {}
         similarities = []
         used_pred = set()
         
-        # Greedy matching: iterate through gold nodes
+        # 贪婪匹配：遍历黄金节点
         for i, gold_node in enumerate(gold_nodes):
             best_sim = -1
             best_pred_idx = -1
@@ -125,35 +125,35 @@ class SemanticScorer:
         gold_plan: Dict[str, List[str]],
         threshold: float = 0.7
     ) -> Tuple[float, Dict[str, str]]:
-        """Compute overall semantic similarity score between plans.
+        """计算规划之间的整体语义相似度分数
         
         Args:
-            pred_plan: Predicted plan {"Q1": ["question", "<A1>"], ...}
-            gold_plan: Golden plan in same format
-            threshold: Similarity threshold for matching
+            pred_plan: 预测规划 {"Q1": ["问题", "<A1>"], ...}
+            gold_plan: 黄金规划，格式相同
+            threshold: 匹配的相似度阈值
             
         Returns:
-            Tuple of (average similarity score, node mapping)
+            (平均相似度分数, 节点映射) 元组
         """
         if not pred_plan or not gold_plan:
             return 0.0, {}
         
-        # Extract questions from plans
+        # 从规划中提取问题
         gold_questions = [v[0] for v in gold_plan.values()]
         pred_questions = [v[0] for v in pred_plan.values()]
         
         gold_nodes = list(gold_plan.keys())
         pred_nodes = list(pred_plan.keys())
         
-        # Compute similarity matrix
+        # 计算相似度矩阵
         sim_matrix = self.compute_similarity_matrix(pred_questions, gold_questions)
         
-        # Find optimal mapping
+        # 找到最优映射
         mapping, similarities = self.find_optimal_mapping(
             sim_matrix, gold_nodes, pred_nodes, threshold
         )
         
-        # Average similarity normalized by golden plan size
+        # 按黄金规划大小归一化的平均相似度
         if similarities:
             avg_score = sum(similarities) / len(gold_plan)
         else:
@@ -163,30 +163,30 @@ class SemanticScorer:
 
 
 class SubGoalScorer:
-    """Scores sub-goal completion using token-level F1.
+    """使用token级F1评估子目标完成度
     
-    For each matched sub-question, compares the predicted intermediate
-    answer with the golden answer using F1 metric.
+    对于每个匹配的子问题，使用F1指标比较
+    预测的中间答案与黄金答案。
     """
     
     @staticmethod
     def normalize_answer(text: str) -> str:
-        """Normalize answer for comparison."""
+        """规范化答案用于比较"""
         import string
         
         text = text.lower()
-        # Remove articles
+        # 移除冠词
         text = re.sub(r"\b(a|an|the)\b", " ", text)
-        # Remove punctuation
+        # 移除标点
         text = "".join(c for c in text if c not in string.punctuation)
-        # Normalize whitespace
+        # 规范化空白
         text = " ".join(text.split())
         
         return text
     
     @staticmethod
     def token_f1(pred: str, gold: str) -> float:
-        """Compute token-level F1 score."""
+        """计算token级F1分数"""
         pred_tokens = set(SubGoalScorer.normalize_answer(pred).split())
         gold_tokens = set(SubGoalScorer.normalize_answer(gold).split())
         
@@ -208,15 +208,15 @@ class SubGoalScorer:
         gold_graph: Dict[str, Dict],
         mapping: Dict[str, str]
     ) -> float:
-        """Compute sub-goal completion score.
+        """计算子目标完成度分数
         
         Args:
-            pred_graph: Predicted execution results {"Q1": {"answer": "..."}, ...}
-            gold_graph: Golden execution results
-            mapping: Node mapping from golden to predicted
+            pred_graph: 预测执行结果 {"Q1": {"answer": "..."}, ...}
+            gold_graph: 黄金执行结果
+            mapping: 从黄金到预测的节点映射
             
         Returns:
-            Average F1 score across matched sub-goals
+            匹配子目标的平均F1分数
         """
         if not mapping or not gold_graph:
             return 0.0
@@ -237,4 +237,3 @@ class SubGoalScorer:
             return 0.0
             
         return sum(scores) / len(gold_graph)
-

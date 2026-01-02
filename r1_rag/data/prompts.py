@@ -1,123 +1,114 @@
 """
-Prompt Templates for R1-RAG
+R1-RAG Prompt模板
 
-Contains carefully designed prompts for:
-1. Training prompt template (guides model output format)
-2. GPT-4o annotation generation (creates golden plans)
+包含精心设计的prompt用于:
+1. 训练prompt模板（引导模型输出格式）
+2. GPT-4o标注生成（创建黄金规划）
 """
 
-# One-shot example demonstrating the expected output format
-ONE_SHOT_EXAMPLE = """## One-Shot Example:
-Input:
-Who was the screenwriter of the film directed by the person who created the Money in the Bank ladder match?
+# 演示预期输出格式的one-shot示例
+ONE_SHOT_EXAMPLE = """## 示例:
+输入:
+谁执导了《泰坦尼克号》的导演的第一部电影？
 
-Output:
-<think> The question involves multiple entities and relations, so it is best decomposed into smaller sub-questions. First, I need to identify the creator of the Money in the Bank ladder match. Then, I should check which film that person directed. Finally, I must find the screenwriter of that film. </think>
+输出:
+<think> 这个问题涉及多个实体和关系，所以最好分解成更小的子问题。首先，我需要找到《泰坦尼克号》的导演。然后，我需要查找该导演的第一部电影。 </think>
 <plan>
-{ "Q1": ["Who created the Money in the Bank ladder match?", "#1"], "Q2": ["Which film was directed by #1?", "#2"], "Q3": ["Who was the screenwriter of #2?", "#3"] } 
+{ "Q1": ["谁执导了《泰坦尼克号》？", "#1"], "Q2": ["#1的第一部电影是什么？", "#2"] } 
 </plan>
 
 <subPlan>
-    <think> To start, I need to find who created the Money in the Bank ladder match. </think>
-    <search> creator of the Money in the Bank ladder match </search>
-    <information> The Money in the Bank ladder match was created by Chris Jericho. </information>
-    <think> The information shows that Chris Jericho is the creator. </think>
-    <subAnswer> #1 = Chris Jericho </subAnswer>
+    <think> 首先，我需要找出《泰坦尼克号》的导演。 </think>
+    <search> 泰坦尼克号 导演 </search>
+    <information> 《泰坦尼克号》是1997年上映的史诗级爱情灾难片，由詹姆斯·卡梅隆执导。 </information>
+    <think> 信息显示詹姆斯·卡梅隆是导演。 </think>
+    <subAnswer> #1 = 詹姆斯·卡梅隆 </subAnswer>
 </subPlan>
 
 <subPlan>
-    <think> Next, I need to find which film Chris Jericho directed, based on the previous answer. </think>
-    <search> Which film was directed by Chris Jericho </search>
-    <information> Chris Jericho directed the film "But I'm Chris Jericho!". </information>
-    <think> The evidence indicates that the film directed by Chris Jericho is "But I'm Chris Jericho!". </think>
-    <subAnswer> #2 = "But I'm Chris Jericho!" </subAnswer>
+    <think> 接下来，我需要查找詹姆斯·卡梅隆的第一部电影。 </think>
+    <search> 詹姆斯·卡梅隆 第一部电影 导演处女作 </search>
+    <information> 詹姆斯·卡梅隆的导演处女作是1982年的《食人鱼2：繁殖》。 </information>
+    <think> 证据表明他的第一部电影是《食人鱼2》。 </think>
+    <subAnswer> #2 = 食人鱼2 </subAnswer>
 </subPlan>
 
-<subPlan>
-    <think> Finally, I should determine who wrote the film "But I'm Chris Jericho!". </think>
-    <search> "But I'm Chris Jericho!" film screenwriter </search>
-    <information> The series "But I'm Chris Jericho!" was written by Bob Kerr and Norm Hiscock. </information>
-    <think> The results confirm that the screenwriters of the film are Bob Kerr and Norm Hiscock. </think>
-    <subAnswer> #3 = Bob Kerr and Norm Hiscock </subAnswer>
-</subPlan>
-
-<think> I have gathered all the necessary information from the sub-questions and can now provide the final answer. </think>
-<answer> Bob Kerr and Norm Hiscock </answer>
+<think> 我已经从子问题中收集了所有必要的信息，现在可以提供最终答案了。 </think>
+<answer> 食人鱼2 </answer>
 """
 
-# Main training prompt template
-PLANNING_PROMPT_TEMPLATE = """Answer the given question by following the steps below. You must conduct all reasoning inside <think> and </think> before producing <plan>, <search>, <subAnswer> and <answer>. 
+# 主训练prompt模板
+PLANNING_PROMPT_TEMPLATE = """按照以下步骤回答给定的问题。在生成<plan>、<search>、<subAnswer>和<answer>之前，你必须在<think>和</think>之间进行所有推理。
 
-Step 1: Explicitly generate one or more sub-questions within the <plan> and </plan> block.
- - Each sub-question must contain both a question and a placeholder (#1, #2, etc.) that represents the answer to that question.
- - Each sub-question should be as brief and precise as possible.
- - If a sub-question depends on the answer to a previous one, use a placeholder (#1, #2, etc.) to represent that dependency.
- - The output format of the sub-questions must follow this JSON structure:
-{
-    "Q1": ["First sub-question", "#1"],
-    "Q2": ["Second sub-question using #1", "#2"],
+步骤1: 在<plan>和</plan>块中明确生成一个或多个子问题。
+ - 每个子问题必须包含一个问题和一个代表该问题答案的占位符（#1, #2等）。
+ - 每个子问题应该尽可能简短精确。
+ - 如果一个子问题依赖于前一个子问题的答案，使用占位符（#1, #2等）来表示该依赖。
+ - 子问题的输出格式必须遵循以下JSON结构:
+{{
+    "Q1": ["第一个子问题", "#1"],
+    "Q2": ["使用#1的第二个子问题", "#2"],
     ...
-}
+}}
 
-Step 2: For each sub-question, create a block enclosed in <subPlan> and </subPlan>.
-Within each <subPlan> block you must:
- - In sequential order, take one sub-question from <plan> and fill it between <search> and </search>.
- - If you lack some knowledge, call a search engine using <search> query </search>. The search engine will return results enclosed in <information> and </information>. You may search as many times as needed.
- - Conclude the block with a <subAnswer> that binds the answer to the current sub-question.
+步骤2: 对于每个子问题，创建一个包含在<subPlan>和</subPlan>中的块。
+在每个<subPlan>块中你必须:
+ - 按顺序从<plan>中取出一个子问题，填入<search>和</search>之间。
+ - 如果你缺少某些知识，使用<search>查询</search>调用搜索引擎。搜索引擎将返回包含在<information>和</information>中的结果。你可以根据需要搜索多次。
+ - 用<subAnswer>结束该块，将答案绑定到当前子问题。
 
-Step 3: Provide the final result inside <answer> and </answer>, without detailed explanations.
+步骤3: 在<answer>和</answer>中提供最终结果，不需要详细解释。
 
 {one_shot_example}
 
-## Now, it's your turn! Please answer the following question!!!
-Question: {question}
+## 现在轮到你了！请回答以下问题！！！
+问题: {question}
 """
 
-# GPT-4o prompt for generating golden plan annotations
-GPT4O_PLAN_ANNOTATION_PROMPT = """You are an expert at decomposing complex multi-hop questions into structured reasoning plans.
+# GPT-4o生成黄金规划标注的prompt
+GPT4O_PLAN_ANNOTATION_PROMPT = """你是一个专家，擅长将复杂的多跳问题分解为结构化的推理规划。
 
-Given a multi-hop question and its gold answer, generate:
-1. A plan (DAG) that decomposes the question into sequential sub-questions
-2. The intermediate answer for each sub-question
+给定一个多跳问题及其黄金答案，生成:
+1. 将问题分解为顺序子问题的规划（DAG）
+2. 每个子问题的中间答案
 
-IMPORTANT RULES:
-- Each sub-question should retrieve ONE piece of information
-- Use placeholders (#1, #2, etc.) to reference previous answers
-- The final sub-question's answer should match the gold answer
-- Ensure the dependency structure is correct (later questions depend on earlier ones)
+重要规则:
+- 每个子问题应该检索一条信息
+- 使用占位符（#1, #2等）来引用前面的答案
+- 最后一个子问题的答案应该与黄金答案匹配
+- 确保依赖结构正确（后面的问题依赖于前面的问题）
 
-Output format (JSON):
+输出格式（JSON）:
 {{
     "plan": {{
-        "Q1": ["<sub-question 1>", "#1"],
-        "Q2": ["<sub-question 2 using #1>", "#2"],
+        "Q1": ["<子问题1>", "#1"],
+        "Q2": ["<使用#1的子问题2>", "#2"],
         ...
     }},
     "graph": {{
-        "Q1": {{"answer": "<intermediate answer 1>"}},
-        "Q2": {{"answer": "<intermediate answer 2>"}},
+        "Q1": {{"answer": "<中间答案1>"}},
+        "Q2": {{"answer": "<中间答案2>"}},
         ...
     }}
 }}
 
-Question: {question}
-Gold Answer: {gold_answer}
+问题: {question}
+黄金答案: {gold_answer}
 
-Generate the plan and execution graph:
+生成规划和执行图:
 """
 
-# Prompt for validating generated plans
-PLAN_VALIDATION_PROMPT = """Given the following question, plan, and gold answer, verify if the plan correctly leads to the answer.
+# 验证生成规划的prompt
+PLAN_VALIDATION_PROMPT = """给定以下问题、规划和黄金答案，验证规划是否正确导向答案。
 
-Question: {question}
-Gold Answer: {gold_answer}
+问题: {question}
+黄金答案: {gold_answer}
 
-Generated Plan:
+生成的规划:
 {plan}
 
-Execution Graph:
+执行图:
 {graph}
 
-Is this plan valid? (Answer YES or NO with brief explanation)
+这个规划是否有效？（回答 是 或 否，并简要解释）
 """
-

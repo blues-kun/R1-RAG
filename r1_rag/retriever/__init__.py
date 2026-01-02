@@ -1,10 +1,10 @@
 """
-R1-RAG Retriever Module
+R1-RAG 检索模块
 
-Provides retrieval services for search-augmented generation:
-- E5-based dense retrieval server
-- BM25 sparse retrieval (optional)
-- Document indexing utilities
+提供搜索增强生成的检索服务:
+- E5稠密检索服务器
+- BM25稀疏检索（可选）
+- 文档索引工具
 """
 
 from .server import RetrievalServer, app
@@ -15,4 +15,3 @@ __all__ = [
     "DocumentIndexer",
     "app",
 ]
-

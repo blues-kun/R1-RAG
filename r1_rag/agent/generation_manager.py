@@ -1,13 +1,13 @@
 """
-Generation Manager for R1-RAG
+R1-RAG 生成管理器
 
-Manages the multi-turn LLM generation loop with search integration:
-1. Generate response with reasoning and search queries
-2. Execute search operations via retrieval server
-3. Inject search results as observations
-4. Continue generation until answer or max turns
+管理带搜索集成的多轮LLM生成循环:
+1. 生成包含推理和搜索查询的响应
+2. 通过检索服务器执行搜索操作
+3. 将搜索结果作为观察注入
+4. 继续生成直到得到答案或达到最大轮次
 
-Core component for iterative retrieval-augmented reasoning in GRPO training.
+GRPO训练中迭代检索增强推理的核心组件。
 """
 
 import re
@@ -22,20 +22,20 @@ from verl import DataProto
 
 @dataclass
 class GenerationConfig:
-    """Configuration for multi-turn generation."""
-    max_turns: int = 4              # Maximum search iterations
-    max_start_length: int = 2048    # Max length of initial prompt
-    max_prompt_length: int = 4096   # Max total context length
-    max_response_length: int = 512  # Max tokens per generation
-    max_obs_length: int = 600       # Max tokens for search results
+    """多轮生成配置"""
+    max_turns: int = 4              # 最大搜索迭代次数
+    max_start_length: int = 2048    # 初始prompt的最大长度
+    max_prompt_length: int = 4096   # 总上下文最大长度
+    max_response_length: int = 512  # 每次生成的最大token数
+    max_obs_length: int = 600       # 搜索结果的最大token数
     num_gpus: int = 1
     search_url: str = "http://127.0.0.1:8000/retrieve"
-    topk: int = 3                   # Number of search results
-    no_think_rl: bool = False       # Whether to mask thinking in RL
+    topk: int = 3                   # 搜索结果数量
+    no_think_rl: bool = False       # 是否在RL中屏蔽思考过程
 
 
 class TensorHelper:
-    """Helper class for tensor operations during generation."""
+    """生成过程中的张量操作辅助类"""
     
     def __init__(
         self,
@@ -54,7 +54,7 @@ class TensorHelper:
         tensors: List[torch.Tensor],
         pad_to_left: bool = True
     ) -> torch.Tensor:
-        """Concatenate tensors and handle padding alignment."""
+        """拼接张量并处理填充对齐"""
         concatenated = torch.cat(tensors, dim=1)
         
         mask = concatenated != self.pad_token_id if pad_to_left else concatenated == self.pad_token_id
@@ -63,28 +63,28 @@ class TensorHelper:
         return concatenated.gather(1, sorted_indices)
     
     def create_attention_mask(self, input_ids: torch.Tensor) -> torch.Tensor:
-        """Create attention mask from input IDs."""
+        """从input_ids创建attention mask"""
         return (input_ids != self.pad_token_id).long()
     
     def create_position_ids(self, attention_mask: torch.Tensor) -> torch.Tensor:
-        """Create position IDs from attention mask."""
+        """从attention mask创建position ids"""
         return attention_mask.cumsum(dim=-1) - 1
 
 
 class LLMGenerationManager:
-    """Manages multi-turn generation with search integration.
+    """管理带搜索集成的多轮生成
     
-    The generation loop implements:
-    1. Model generates <think>...</think><search>query</search>
-    2. System executes search, returns <information>results</information>
-    3. Model continues with next sub-question
-    4. Repeat until <answer>...</answer> or max turns
+    生成循环实现:
+    1. 模型生成 <think>...</think><search>query</search>
+    2. 系统执行搜索，返回 <information>results</information>
+    3. 模型继续处理下一个子问题
+    4. 重复直到 <answer>...</answer> 或达到最大轮次
     
-    Key features:
-    - Tracks active/completed samples in batch
-    - Handles variable-length conversations
-    - Creates info_mask to exclude search results from RL gradients
-    - Compatible with veRL's DataProto format
+    核心特性:
+    - 跟踪批次中的活跃/完成样本
+    - 处理变长对话
+    - 创建info_mask以在RL梯度中排除搜索结果
+    - 兼容veRL的DataProto格式
     """
     
     def __init__(
@@ -94,20 +94,20 @@ class LLMGenerationManager:
         config: GenerationConfig,
         is_validation: bool = False,
     ):
-        """Initialize generation manager.
+        """初始化生成管理器
         
         Args:
             tokenizer: HuggingFace tokenizer
-            actor_rollout_wg: Worker group for generation
-            config: Generation configuration
-            is_validation: Whether in validation mode
+            actor_rollout_wg: 生成的worker group
+            config: 生成配置
+            is_validation: 是否为验证模式
         """
         self.tokenizer = tokenizer
         self.actor_rollout_wg = actor_rollout_wg
         self.config = config
         self.is_validation = is_validation
         
-        # Initialize tensor helper
+        # 初始化张量辅助器
         self.tensor_fn = TensorHelper(
             pad_token_id=tokenizer.pad_token_id,
             max_prompt_length=config.max_prompt_length,
@@ -115,14 +115,14 @@ class LLMGenerationManager:
             max_start_length=config.max_start_length,
         )
         
-        # Action patterns
+        # 动作模式
         self.search_pattern = re.compile(r'<search>(.*?)</search>', re.DOTALL)
         self.answer_pattern = re.compile(r'<answer>(.*?)</answer>', re.DOTALL)
     
-    # ==================== Tokenization ====================
+    # ==================== 分词处理 ====================
     
     def _batch_tokenize(self, responses: List[str]) -> torch.Tensor:
-        """Tokenize a batch of responses."""
+        """批量分词响应"""
         return self.tokenizer(
             responses,
             add_special_tokens=False,
@@ -134,20 +134,20 @@ class LLMGenerationManager:
         self, 
         responses: torch.Tensor
     ) -> Tuple[torch.Tensor, List[str]]:
-        """Process responses to stop at search or answer operations.
+        """处理响应，在搜索或答案操作处停止
         
         Args:
-            responses: Raw response token IDs
+            responses: 原始响应token IDs
             
         Returns:
-            Tuple of (processed token IDs, string responses)
+            (处理后的token IDs, 字符串响应) 元组
         """
         responses_str = self.tokenizer.batch_decode(
             responses,
             skip_special_tokens=True
         )
         
-        # Truncate at action boundaries
+        # 在动作边界处截断
         processed_str = []
         for resp in responses_str:
             if '</search>' in resp:
@@ -161,13 +161,13 @@ class LLMGenerationManager:
         return processed_ids, processed_str
     
     def _process_observations(self, observations: List[str]) -> torch.Tensor:
-        """Process observations (search results) for injection.
+        """处理观察（搜索结果）用于注入
         
         Args:
-            observations: List of observation strings
+            observations: 观察字符串列表
             
         Returns:
-            Tokenized observations
+            分词后的观察
         """
         obs_ids = self.tokenizer(
             observations,
@@ -176,24 +176,24 @@ class LLMGenerationManager:
             add_special_tokens=False,
         )['input_ids']
         
-        # Truncate if too long
+        # 如果太长则截断
         if obs_ids.shape[1] > self.config.max_obs_length:
-            print(f"[WARNING] Observation too long: {obs_ids.shape[1]} > {self.config.max_obs_length}")
+            print(f"[警告] 观察过长: {obs_ids.shape[1]} > {self.config.max_obs_length}")
             obs_ids = obs_ids[:, :self.config.max_obs_length]
         
         return obs_ids
     
-    # ==================== Action Parsing ====================
+    # ==================== 动作解析 ====================
     
     def parse_action(self, response: str) -> Tuple[str, str, bool]:
-        """Extract action type and content from model response.
+        """从模型响应中提取动作类型和内容
         
         Args:
-            response: Raw model output
+            response: 原始模型输出
             
         Returns:
-            Tuple of (action_type, content, is_valid)
-            action_type: "search", "answer", or None
+            (动作类型, 内容, 是否有效) 元组
+            动作类型: "search", "answer" 或 None
         """
         search_match = self.search_pattern.search(response)
         if search_match:
@@ -205,16 +205,16 @@ class LLMGenerationManager:
         
         return None, "", False
     
-    # ==================== Search Execution ====================
+    # ==================== 搜索执行 ====================
     
     def execute_search(self, queries: List[str]) -> List[str]:
-        """Execute batch search against retrieval server.
+        """对检索服务器执行批量搜索
         
         Args:
-            queries: List of search queries
+            queries: 搜索查询列表
             
         Returns:
-            List of formatted search results
+            格式化的搜索结果列表
         """
         if not queries:
             return []
@@ -228,26 +228,26 @@ class LLMGenerationManager:
             response = requests.post(self.config.search_url, json=payload)
             results = response.json().get("result", [])
             
-            # Format results
+            # 格式化结果
             formatted = []
             for result_list in results:
                 text = ""
                 for idx, doc in enumerate(result_list):
                     content = doc.get("document", {}).get("contents", "")
-                    # Split title and body
+                    # 分离标题和正文
                     lines = content.split("\n")
                     title = lines[0] if lines else ""
                     body = "\n".join(lines[1:]) if len(lines) > 1 else ""
-                    text += f"Doc {idx+1}(Title: {title}) {body}\n"
+                    text += f"文档 {idx+1}(标题: {title}) {body}\n"
                 formatted.append(text)
             
             return formatted
             
         except Exception as e:
-            print(f"[Search Error] {e}")
-            return ["Search failed. Please try a different query."] * len(queries)
+            print(f"[搜索错误] {e}")
+            return ["搜索失败，请尝试不同的查询。"] * len(queries)
     
-    # ==================== State Management ====================
+    # ==================== 状态管理 ====================
     
     def _update_rolling_state(
         self,
@@ -255,28 +255,28 @@ class LLMGenerationManager:
         cur_responses: torch.Tensor,
         next_obs_ids: torch.Tensor
     ) -> DataProto:
-        """Update rolling state with new responses and observations.
+        """用新的响应和观察更新滚动状态
         
         Args:
-            rollings: Current rolling state
-            cur_responses: Current response tokens
-            next_obs_ids: Next observation tokens
+            rollings: 当前滚动状态
+            cur_responses: 当前响应tokens
+            next_obs_ids: 下一个观察tokens
             
         Returns:
-            Updated DataProto
+            更新后的DataProto
         """
-        # Concatenate with padding
+        # 带填充拼接
         new_input_ids = self.tensor_fn.concatenate_with_padding([
             rollings.batch['input_ids'],
             cur_responses,
             next_obs_ids
         ])
         
-        # Create attention mask and position ids
+        # 创建attention mask和position ids
         new_attention_mask = self.tensor_fn.create_attention_mask(new_input_ids)
         new_position_ids = self.tensor_fn.create_position_ids(new_attention_mask)
         
-        # Truncate to max length
+        # 截断到最大长度
         effective_len = new_attention_mask.sum(dim=1).max()
         max_len = min(self.config.max_prompt_length, effective_len)
         
@@ -297,23 +297,23 @@ class LLMGenerationManager:
         info: Optional[torch.Tensor] = None,
         pad_to_left: bool = True
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Concatenate tensors with info masking for RL gradients.
+        """带info masking的张量拼接，用于RL梯度
         
-        Creates two versions:
-        1. Full tensor with all content
-        2. Masked tensor where info blocks are replaced with pad tokens
+        创建两个版本:
+        1. 包含所有内容的完整张量
+        2. info块被替换为pad token的masked张量
         
-        This allows excluding search results from RL gradient computation.
+        这允许在RL梯度计算中排除搜索结果。
         
         Args:
             prompt: Prompt tokens
-            prompt_with_mask: Prompt tokens (for masking version)
+            prompt_with_mask: Prompt tokens（用于masking版本）
             response: Response tokens
-            info: Information/observation tokens (optional)
-            pad_to_left: Whether to pad to left
+            info: Information/observation tokens（可选）
+            pad_to_left: 是否左填充
             
         Returns:
-            Tuple of (full tensor, masked tensor)
+            (完整张量, masked张量) 元组
         """
         pad_id = self.tokenizer.pad_token_id
         
@@ -322,7 +322,7 @@ class LLMGenerationManager:
         
         if info is not None:
             tensors.append(info)
-            # Create info mask (all pad tokens)
+            # 创建info mask（全是pad tokens）
             info_mask = torch.full(
                 info.size(), 
                 pad_id, 
@@ -334,7 +334,7 @@ class LLMGenerationManager:
         concatenated = torch.cat(tensors, dim=1)
         concatenated_masked = torch.cat(tensors_with_mask, dim=1)
         
-        # Sort by padding position
+        # 按填充位置排序
         mask = concatenated != pad_id if pad_to_left else concatenated == pad_id
         sorted_indices = mask.to(torch.int64).argsort(dim=1, stable=True)
         
@@ -349,15 +349,15 @@ class LLMGenerationManager:
         cur_responses: torch.Tensor,
         next_obs_ids: Optional[torch.Tensor] = None
     ) -> Dict:
-        """Update right side (response) state.
+        """更新右侧（响应）状态
         
         Args:
-            right_side: Current right side state
-            cur_responses: Current response tokens
-            next_obs_ids: Next observation tokens (optional)
+            right_side: 当前右侧状态
+            cur_responses: 当前响应tokens
+            next_obs_ids: 下一个观察tokens（可选）
             
         Returns:
-            Updated right side state
+            更新后的右侧状态
         """
         responses, responses_masked = self._info_masked_concatenate(
             right_side['responses'],
@@ -367,7 +367,7 @@ class LLMGenerationManager:
             pad_to_left=False
         )
         
-        # Truncate to max length
+        # 截断到最大长度
         effective_len = self.tensor_fn.create_attention_mask(responses).sum(dim=1).max()
         max_len = min(self.config.max_prompt_length, effective_len)
         
@@ -376,22 +376,22 @@ class LLMGenerationManager:
             'responses_with_info_mask': responses_masked[:, :max_len]
         }
     
-    # ==================== GPU Handling ====================
+    # ==================== GPU处理 ====================
     
     def _generate_with_gpu_padding(self, active_batch: DataProto) -> DataProto:
-        """Generate with multi-GPU padding handling.
+        """带多GPU填充处理的生成
         
-        When batch size isn't divisible by num_gpus, pad with first sequence.
+        当batch size不能被num_gpus整除时，用第一个序列填充。
         
         Args:
-            active_batch: Batch to generate from
+            active_batch: 要生成的批次
             
         Returns:
-            Generated outputs
+            生成的输出
         """
         num_gpus = self.config.num_gpus
         
-        # Cast to long
+        # 转换为long类型
         for key in active_batch.batch.keys():
             active_batch.batch[key] = active_batch.batch[key].long()
         
@@ -404,7 +404,7 @@ class LLMGenerationManager:
         if remainder == 0:
             return self.actor_rollout_wg.generate_sequences(active_batch)
         
-        # Add padding sequences
+        # 添加填充序列
         padding_size = num_gpus - remainder
         padded_batch = {}
         
@@ -416,7 +416,7 @@ class LLMGenerationManager:
         for key in padded_active_batch.batch.keys():
             padded_active_batch.batch[key] = padded_active_batch.batch[key].long()
         
-        # Generate and remove padding
+        # 生成并移除填充
         output = self.actor_rollout_wg.generate_sequences(padded_active_batch)
         
         for k, v in output.batch.items():
@@ -424,40 +424,40 @@ class LLMGenerationManager:
         
         return output
     
-    # ==================== Main Generation Loop ====================
+    # ==================== 主生成循环 ====================
     
     def run_generation_loop(
         self,
         gen_batch: DataProto
     ) -> Dict[str, Any]:
-        """Run the full multi-turn generation loop.
+        """运行完整的多轮生成循环
         
-        Implements the core R1-RAG generation process:
-        1. Initialize state for all samples
-        2. Generate responses for active samples
-        3. Parse actions (search/answer)
-        4. Execute searches and inject results
-        5. Repeat until done or max turns
+        实现R1-RAG核心生成流程:
+        1. 为所有样本初始化状态
+        2. 为活跃样本生成响应
+        3. 解析动作（search/answer）
+        4. 执行搜索并注入结果
+        5. 重复直到完成或达到最大轮次
         
         Args:
-            gen_batch: Initial DataProto batch
+            gen_batch: 初始DataProto批次
             
         Returns:
-            Dictionary with outputs including:
-            - prompts: Original prompt tokens
-            - responses: Generated response tokens
-            - responses_with_info_mask: Responses with info blocks masked
-            - attention_mask: Full attention mask
-            - statistics: Turn counts, search counts, etc.
+            包含输出的字典:
+            - prompts: 原始prompt tokens
+            - responses: 生成的response tokens
+            - responses_with_info_mask: info块被masked的响应
+            - attention_mask: 完整的attention mask
+            - statistics: 轮次计数、搜索计数等
         """
         batch_size = gen_batch.batch['input_ids'].shape[0]
         device = gen_batch.batch['input_ids'].device
         
-        # Initialize tracking
+        # 初始化跟踪
         active_mask = [True] * batch_size
         original_prompts = gen_batch.batch['input_ids'].clone()
         
-        # Initialize right side (response accumulator)
+        # 初始化右侧（响应累加器）
         right_side = {
             'responses': torch.full(
                 (batch_size, 1), 
@@ -473,27 +473,27 @@ class LLMGenerationManager:
             )
         }
         
-        # Statistics
+        # 统计信息
         turn_counts = [0] * batch_size
         search_counts = [0] * batch_size
         valid_action_counts = [0] * batch_size
         
-        # Current rolling state
+        # 当前滚动状态
         rollings = gen_batch
         
-        # Main generation loop
+        # 主生成循环
         for turn in range(self.config.max_turns):
             if not any(active_mask):
                 break
             
-            # Generate responses for active samples
+            # 为活跃样本生成响应
             gen_output = self._generate_with_gpu_padding(rollings)
             cur_responses = gen_output.batch['responses']
             
-            # Post-process responses
+            # 后处理响应
             cur_responses, responses_str = self._postprocess_responses(cur_responses)
             
-            # Parse actions and collect search queries
+            # 解析动作并收集搜索查询
             search_indices = []
             search_queries = []
             observations = [""] * batch_size
@@ -510,47 +510,47 @@ class LLMGenerationManager:
                     valid_action_counts[i] += 1
                 
                 if action_type == "answer":
-                    # Final answer - mark as done
+                    # 最终答案 - 标记完成
                     dones[i] = True
                 elif action_type == "search":
-                    # Queue search
+                    # 加入搜索队列
                     search_indices.append(i)
                     search_queries.append(content)
                     search_counts[i] += 1
                 else:
-                    # Invalid action - provide guidance
+                    # 无效动作 - 提供指导
                     observations[i] = (
-                        "\nMy previous action is invalid. "
-                        "I should use <search>query</search> to search, "
-                        "or <answer>result</answer> to give the final answer. "
-                        "Let me try again.\n"
+                        "\n我之前的动作无效。"
+                        "我应该使用<search>查询</search>来搜索，"
+                        "或使用<answer>结果</answer>给出最终答案。"
+                        "让我重试。\n"
                     )
                 
                 turn_counts[i] += 1
             
-            # Execute searches in batch
+            # 批量执行搜索
             if search_queries:
                 results = self.execute_search(search_queries)
                 for idx, result in zip(search_indices, results):
                     observations[idx] = f"\n\n<information>{result.strip()}</information>\n\n"
             
-            # Process observations
+            # 处理观察
             obs_ids = self._process_observations(observations)
             
-            # Update right side (response accumulator)
+            # 更新右侧（响应累加器）
             right_side = self._update_right_side(
                 right_side,
                 cur_responses,
                 obs_ids if any(not d for d in dones) else None
             )
             
-            # Update rolling state for next turn
+            # 更新滚动状态用于下一轮
             rollings = self._update_rolling_state(rollings, cur_responses, obs_ids)
             
-            # Update active mask
+            # 更新活跃掩码
             active_mask = [not d for d in dones]
         
-        # Final generation for any remaining active samples
+        # 为剩余活跃样本进行最终生成
         if any(active_mask):
             gen_output = self._generate_with_gpu_padding(rollings)
             final_responses = gen_output.batch['responses']
@@ -558,11 +558,11 @@ class LLMGenerationManager:
             
             right_side = self._update_right_side(right_side, final_responses)
         
-        # Prepare final output
+        # 准备最终输出
         responses = right_side['responses']
         responses_masked = right_side['responses_with_info_mask']
         
-        # Create full attention mask
+        # 创建完整的attention mask
         prompt_mask = (original_prompts != self.tokenizer.pad_token_id).long()
         response_mask = (responses != self.tokenizer.pad_token_id).long()
         full_attention_mask = torch.cat([prompt_mask, response_mask], dim=1)
@@ -581,23 +581,23 @@ class LLMGenerationManager:
             }
         }
     
-    # ==================== Simple Step Interface ====================
+    # ==================== 简单步骤接口 ====================
     
     def step(
         self,
         responses: List[str],
         active_mask: List[bool]
     ) -> Tuple[List[str], List[bool], List[bool]]:
-        """Execute one step of the generation loop.
+        """执行生成循环的一步
         
-        Simplified interface for external control.
+        用于外部控制的简化接口。
         
         Args:
-            responses: Model responses for each sample
-            active_mask: Which samples are still active
+            responses: 每个样本的模型响应
+            active_mask: 哪些样本仍然活跃
             
         Returns:
-            Tuple of (observations, done_flags, valid_action_flags)
+            (观察, 完成标志, 有效动作标志) 元组
         """
         observations = []
         dones = []
@@ -622,20 +622,20 @@ class LLMGenerationManager:
             elif action_type == "search":
                 search_indices.append(i)
                 search_queries.append(content)
-                observations.append(None)  # Placeholder
+                observations.append(None)  # 占位符
                 dones.append(False)
                 valid_actions.append(True)
             else:
                 observations.append(
-                    "\nMy previous action is invalid. "
-                    "I should use <search>query</search> to search, "
-                    "or <answer>result</answer> to give the final answer. "
-                    "Let me try again.\n"
+                    "\n我之前的动作无效。"
+                    "我应该使用<search>查询</search>来搜索，"
+                    "或使用<answer>结果</answer>给出最终答案。"
+                    "让我重试。\n"
                 )
                 dones.append(False)
                 valid_actions.append(False)
         
-        # Execute searches
+        # 执行搜索
         if search_queries:
             results = self.execute_search(search_queries)
             for idx, result in zip(search_indices, results):

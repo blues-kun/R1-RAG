@@ -2,30 +2,26 @@
 
 <div align="center">
 
-**A Reinforcement Learning Framework for Multi-Hop Question Answering with Explicit Global Planning**
-
-[![Python 3.9+](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![PyTorch 2.4+](https://img.shields.io/badge/PyTorch-2.4+-ee4c2c.svg)](https://pytorch.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+**用于多跳问答的强化学习框架，具有显式规划**
 
 </div>
 
-## 📖 Overview
+## 📖 概述
 
-R1-RAG is a reinforcement learning framework designed to enhance **global reasoning** in multi-hop question answering. Unlike traditional RAG systems that perform retrieval reactively, R1-RAG teaches language models to:
+R1-RAG 是一个强化学习框架，旨在增强多跳问答中的**规划推理**能力。与传统的被动执行检索的RAG系统不同，R1-RAG 教导语言模型：
 
-1. **Plan Globally**: Decompose complex questions into structured sub-goals (DAG)
-2. **Execute Reliably**: Perform coordinated retrieval and reasoning
-3. **Learn from Process**: Use dense supervision on intermediate steps
+1. **规划推理**: 将复杂问题分解为结构化的子目标（DAG）
+2. **可靠执行**: 执行协调的检索和推理
+3. **从过程中学习**: 在中间步骤上使用密集监督
 
-### Key Innovations
+### 核心创新
 
-- **DAG-based Planning Structure**: Explicit dependency modeling between sub-questions
-- **Dual Reward Mechanism**: 
-  - Structural reward via Graph Edit Distance (GED)
-  - Semantic reward via E5 embedding similarity
-- **Progressive Weight Annealing**: Smooth transition from process to outcome focus
-- **GPT-4o Annotation Pipeline**: Automated generation of high-quality golden plans
+- **基于DAG的规划结构**: 子问题之间的显式依赖建模
+- **双重奖励机制**: 
+  - 通过图编辑距离（GED）的结构奖励
+  - 通过E5嵌入相似度的语义奖励
+- **渐进式权重退火**: 从过程关注到结果关注的平滑过渡
+- **GPT-4o标注流水线**: 自动生成高质量的黄金规划
 
 ## 🏗️ Architecture
 
@@ -64,7 +60,7 @@ git clone https://github.com/your-username/R1-RAG.git
 cd R1-RAG
 
 # Create environment
-conda create -n r1rag python=3.9
+conda create -n r1rag python=3.12
 conda activate r1rag
 
 # Install PyTorch (adjust for your CUDA version)
@@ -81,7 +77,7 @@ pip install -e .
 
 ```bash
 # For local retrieval server
-conda create -n retriever python=3.10
+conda create -n retriever python=3.12
 conda activate retriever
 
 conda install pytorch==2.4.0 pytorch-cuda=12.1 -c pytorch -c nvidia
@@ -131,21 +127,23 @@ bash scripts/train_grpo.sh
 
 ## 📊 Data Format
 
+> **注意**: 本项目的训练数据使用**英文数据集**（HotpotQA, 2WikiMultihopQA, Musique等）。以下示例使用中文仅是为了便于理解数据格式和模型输出结构。实际训练时，所有问题、答案和规划均为英文。
+
 ### Training Sample Structure
 
 ```python
 {
-    "question": "What is the population of the birthplace of Albert Einstein?",
-    "golden_answers": ["128,000"],
+    "question": "谁执导了《泰坦尼克号》的导演的第一部电影？",
+    "golden_answers": ["Piranha II: The Spawning", "食人鱼2"],
     "metadata": {
         "hop": "2hop",
         "plan": {
-            "Q1": ["Where was Albert Einstein born?", "<A1>"],
-            "Q2": ["What is the population of <A1>?", "<A2>"]
+            "Q1": ["谁执导了《泰坦尼克号》？", "<A1>"],
+            "Q2": ["<A1>的第一部电影是什么？", "<A2>"]
         },
         "graph": [{
-            "Q1": {"answer": "Ulm"},
-            "Q2": {"answer": "128,000"}
+            "Q1": {"answer": "詹姆斯·卡梅隆"},
+            "Q2": {"answer": "食人鱼2"}
         }]
     }
 }
@@ -153,63 +151,36 @@ bash scripts/train_grpo.sh
 
 ### Expected Model Output
 
+> **说明**: 以下为中文示例，实际训练和推理使用英文数据。
+
 ```xml
-<think> This is a two-hop question. I need to find Einstein's birthplace first. </think>
+<think> 这个问题需要分两步：首先找到《泰坦尼克号》的导演，然后查询该导演的第一部电影。 </think>
 <plan>
-{"Q1": ["Where was Albert Einstein born?", "#1"], "Q2": ["What is the population of #1?", "#2"]}
+{"Q1": ["谁执导了《泰坦尼克号》？", "#1"], "Q2": ["#1的第一部电影是什么？", "#2"]}
 </plan>
 
 <subPlan>
-    <think> Let me search for Einstein's birthplace. </think>
-    <search> Albert Einstein birthplace </search>
-    <information> Albert Einstein was born in Ulm, Germany... </information>
-    <think> Einstein was born in Ulm. </think>
-    <subAnswer> #1 = Ulm </subAnswer>
+    <think> 先搜索《泰坦尼克号》的导演信息。 </think>
+    <search> 泰坦尼克号 导演 </search>
+    <information> 《泰坦尼克号》是1997年上映的史诗级爱情灾难片，由詹姆斯·卡梅隆执导... </information>
+    <think> 根据检索结果，导演是詹姆斯·卡梅隆。 </think>
+    <subAnswer> #1 = 詹姆斯·卡梅隆 </subAnswer>
 </subPlan>
 
 <subPlan>
-    <think> Now I need the population of Ulm. </think>
-    <search> population of Ulm Germany </search>
-    <information> Ulm has a population of approximately 128,000... </information>
-    <think> The population is 128,000. </think>
-    <subAnswer> #2 = 128,000 </subAnswer>
+    <think> 现在需要查询詹姆斯·卡梅隆的导演处女作。 </think>
+    <search> 詹姆斯·卡梅隆 第一部电影 导演处女作 </search>
+    <information> 詹姆斯·卡梅隆的导演处女作是1982年的《食人鱼2：繁殖》(Piranha II: The Spawning)... </information>
+    <think> 他的第一部电影是《食人鱼2》。 </think>
+    <subAnswer> #2 = 食人鱼2 </subAnswer>
 </subPlan>
 
-<think> I have all the information needed. </think>
-<answer> 128,000 </answer>
+<think> 已获取所有子问题的答案，可以给出最终结果。 </think>
+<answer> 食人鱼2 </answer>
 ```
 
-## 🔧 Configuration
 
-### Key Hyperparameters
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `max_turns` | 4 | Maximum search iterations |
-| `n_agent` | 5 | Samples per prompt for GRPO |
-| `format_weight` | 0.1 | Weight for format compliance |
-| `plan_sim_weight` | 0.5 | Weight for semantic similarity |
-| `structure_weight` | 0.5 | Weight for structural match |
-| `step_weight` | 0.5 | Weight for sub-goal completion |
-| `annealing_steps` | 50 | Steps for weight annealing |
-
-### Model Support
-
-- **Qwen2.5-3B-Instruct** (default, recommended for efficiency)
-- Qwen2.5-7B-Instruct
-- Llama-3.2-3B-Instruct
-- Llama-3.1-8B-Instruct
-
-## 📈 Results
-
-Performance on multi-hop QA benchmarks:
-
-| Dataset | EM | F1 | Improvement |
-|---------|----|----|-------------|
-| HotpotQA | 42.3 | 54.7 | +12.1 |
-| 2WikiMultihopQA | 38.9 | 48.2 | +14.5 |
-| Musique | 21.4 | 29.8 | +8.7 |
-| Bamboogle | 45.2 | 52.8 | +15.1 |
 
 ## 🗂️ Project Structure
 
@@ -233,53 +204,8 @@ R1_RAG/
 ├── configs/
 │   └── grpo_qwen_3b.yaml       # Training config
 └── requirements.txt
-```
 
-## 🔬 Technical Details
 
-### Progressive Weight Annealing
-
-The annealing function smoothly transitions training focus:
-
-```python
-α(t) = 1 / (1 + exp((t - 0.9T) / 10))
-
-# Early training (t << 0.9T): α ≈ 1
-#   → Focus on learning planning structure
-# Late training (t > 0.9T): α → 0  
-#   → Focus on answer correctness
-```
-
-### Graph Edit Distance (GED)
-
-Measures structural similarity between planning DAGs:
-
-```python
-GED = |V_pred ⊕ V_gold| + |E_pred ⊕ E_gold|
-normalized_GED = exp(-β * GED)
-```
-
-### E5 Semantic Scoring
-
-Matches sub-questions using embedding similarity:
-
-```python
-similarity = cos_sim(E5(pred_question), E5(gold_question))
-# Threshold: 0.7 for valid match
-```
-
-## 📝 Citation
-
-If you use R1-RAG in your research, please cite:
-
-```bibtex
-@article{r1rag2024,
-  title={R1-RAG: Reasoning-First Retrieval-Augmented Generation with Global Planning},
-  author={Your Name},
-  journal={arXiv preprint},
-  year={2024}
-}
-```
 
 ## 🙏 Acknowledgements
 
@@ -290,7 +216,4 @@ This project builds upon several excellent open-source works:
 - [sentence-transformers](https://github.com/UKPLab/sentence-transformers) - E5 embeddings
 - [NetworkX](https://networkx.org/) - Graph algorithms
 
-## 📄 License
-
-This project is licensed under the MIT License - see [LICENSE](LICENSE) file for details.
 
