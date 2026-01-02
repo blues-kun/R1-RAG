@@ -24,13 +24,28 @@ except ImportError:
     exit(1)
 
 
-# 预构建索引URL（替换为实际托管地址）
+# 预构建索引URL
 INDEX_URLS = {
     "wiki18_e5_flat": {
         "index": "https://huggingface.co/datasets/GenIRAG/search-r1-retriever/resolve/main/e5_Flat.index",
         "corpus": "https://huggingface.co/datasets/GenIRAG/search-r1-retriever/resolve/main/wiki-18.jsonl.gz",
     },
-    # 在这里添加更多索引选项
+}
+
+# PER-PSE 训练数据集 (包含 2Wiki, HotpotQA, Musique 等带黄金规划标注的多跳QA数据)
+DATASET_URLS = {
+    "per_pse": {
+        "base_url": "https://huggingface.co/datasets/GenIRAG/PER-PSE",
+        "files": [
+            "https://huggingface.co/datasets/GenIRAG/PER-PSE/resolve/main/train.parquet",
+            "https://huggingface.co/datasets/GenIRAG/PER-PSE/resolve/main/test.parquet",
+        ],
+    },
+}
+
+# E5 嵌入模型 (用于检索编码)
+MODEL_URLS = {
+    "e5_base_v2": "https://huggingface.co/intfloat/e5-base-v2",
 }
 
 
