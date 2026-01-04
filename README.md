@@ -134,7 +134,7 @@ bash scripts/train_grpo.sh
 ```python
 {
     "question": "《泰坦尼克号》的导演的第一部电影？",
-    "golden_answers": ["Piranha II: The Spawning", "食人鱼2"],
+    "golden_answers": ["xenogenesis"],
     "metadata": {
         "hop": "2hop",
         "plan": {
@@ -143,7 +143,7 @@ bash scripts/train_grpo.sh
         },
         "graph": [{
             "Q1": {"answer": "詹姆斯·卡梅隆"},
-            "Q2": {"answer": "食人鱼2"}
+            "Q2": {"answer": "xenogenesis"}
         }]
     }
 }
@@ -170,13 +170,13 @@ bash scripts/train_grpo.sh
 <subPlan>
     <think> 现在需要查询詹姆斯·卡梅隆的导演处女作。 </think>
     <search> 詹姆斯·卡梅隆 第一部电影 导演处女作 </search>
-    <information> 詹姆斯·卡梅隆的导演处女作是1982年的《食人鱼2：繁殖》(Piranha II: The Spawning)... </information>
-    <think> 他的第一部电影是《食人鱼2》。 </think>
-    <subAnswer> #2 = 食人鱼2 </subAnswer>
+    <information> 詹姆斯·卡梅隆的导演处女作是1978年的《Xenogenesis》</information>
+    <think> 他的第一部电影是《Xenogenesis》。 </think>
+    <subAnswer> #2 = Xenogenesis </subAnswer>
 </subPlan>
 
 <think> 已获取所有子问题的答案，可以给出最终结果。 </think>
-<answer> 食人鱼2 </answer>
+<answer> Xenogenesis</answer>
 ```
 
 
