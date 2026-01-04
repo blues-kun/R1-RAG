@@ -1,8 +1,8 @@
-# R1-RAG: Reasoning-First Retrieval-Augmented Generation
+# R1-RAG: Learning to Plan in Retrieval with GRPO-Optimized Thinking 
 
 <div align="center">
 
-**用于多跳问答的强化学习框架，具有显式规划**
+**通过 GRPO 优化的检索增强生成与高效思考学习规划**
 
 </div>
 
@@ -56,7 +56,7 @@ where:
 
 ```bash
 # Clone repository
-git clone https://github.com/your-username/R1-RAG.git
+git clone https://github.com/blues-kun/R1-RAG.git
 cd R1-RAG
 
 # Create environment
