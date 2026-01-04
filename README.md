@@ -133,7 +133,7 @@ bash scripts/train_grpo.sh
 
 ```python
 {
-    "question": "谁执导了《泰坦尼克号》的导演的第一部电影？",
+    "question": "《泰坦尼克号》的导演的第一部电影？",
     "golden_answers": ["Piranha II: The Spawning", "食人鱼2"],
     "metadata": {
         "hop": "2hop",
